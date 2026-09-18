@@ -621,8 +621,8 @@ restore_current_firewall() {
 }
 
 BASE=/usr/local/lib/proton-router/vpn-block
+STATE_ROOT=/var/lib/proton-router
 STATE=/var/lib/proton-router/vpn-block
-
 RUNROOT="$STATE/runs"
 LKG="$STATE/lkg"
 
@@ -662,6 +662,7 @@ mkdir -p "$RUNROOT" "$LKG"
 # published status file without exposing provider data,
 # run snapshots, or last-known-good adapter contents.
 #
+chmod 0711 "$STATE_ROOT"
 chmod 0711 "$STATE"
 
 #
