@@ -31,7 +31,7 @@ internal sealed class InstallerForm : Form
 {
     private const string CertifiedArchiveName = "proton-router-v0.0.0.tar.gz";
     private const string CertifiedSidecarName = "proton-router-v0.0.0.sha256.txt";
-    private const string CertifiedArchiveSha256 = "1DDFEACBEF3E5AA871268CB8C828E86ED0DDC98CC9620E59CA686B46A9766C1F";
+    private const string CertifiedArchiveSha256 = "20FBCF4F0FFBF8003A0354B2A30C5D7272770D61144049626106F0168EB6F00D";
     private const string LanHost = "192.168.50.1";
     private const string LanPrefix = "192.168.50.";
     private const string RemoteExportDir = "~/proton-router-v0.0.0";
