@@ -15,9 +15,28 @@ Ensure an Ethernet cable is connected from one of your router's LAN ports to the
 
 ## Installing Proton-Router
 
-If on a Windows machine, it is recommended to use the Windows installer packaged in with the latest release. If you wish to build your own tar, see [Packing / Unpacking `proton-router`](#packing--unpacking-proton-router) below. If you wish to build your own installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md).
+If on a Windows machine, it is recommended to use the Windows installer packaged in with the latest release. If you wish to build your own tar, see [Packing / Unpacking `proton-router`](#packing--unpacking-proton-router) below. If you wish to build your own installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md). The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, you may retry the installation. Otherwise it is reccomended to **re-image the Pi 5 with a fresh OS Desktop image** and start again.
 
-Otherwise, or if on a Linux machine, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`.
+Otherwise, or if on a Linux machine, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`. Like the Windows setup, a built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
+
+## Final Setup
+
+Once instalation is complete you may follow the final steps for setup:
+
+1. disconnect the ethernet cables and place the Pi in this orientation
+2. Switch your internet router to Access Point/AP mode.
+3. The **final** topology is as follows:
+
+- AP LAN port -> Pi built-in eth0
+- ISP modem WAN port -> Pi Waveshare PCIe eth1
+
+4. You may turn off/unplug the router, Pi, and modem
+5. Let the modem sit for 1-2mins before plugging back in and connecting to the Pi. This allows the modem and Pi to recognize one another.
+   **The modem MUST be unplugged/reset each time the Pi is rebooted** to ensure proper functionality
+
+6. Turn on the Pi and router.
+
+Congratulations! Your Proton Router is finished!
 
 # Packing / Unpacking `proton-router`
 

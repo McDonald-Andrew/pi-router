@@ -1,17 +1,19 @@
 # Fresh Raspberry Pi Setup
 
-This document builds the router from a fresh Raspberry Pi OS installation using only the files in this repository plus the official Proton VPN package repository.
+This document builds the router from a fresh Raspberry Pi OS installation using the same Raspberry Pi setup phases driven by the Windows `Program.cs` installer.
 
-The goal is not merely to describe the existing router. This procedure is intended to be a reproducibility test: a fresh Raspberry Pi should be able to follow these steps and arrive at the same fail-closed router configuration, including the local web management interface.
+The `setup` script is the canonical implementation. The Windows installer automates its phases; Linux users following this document run those same phases manually. The goal is a reproducibility test: a fresh Raspberry Pi should arrive at the same final router configuration, including the local web management interface.
 
 ## 1. Starting point
 
 Tested hardware:
 
 - Raspberry Pi 5
-- built-in Ethernet used as LAN
-- second Ethernet adapter used as WAN
-- external wireless access point connected to the LAN
+- built-in Raspberry Pi Ethernet used as `eth0` / LAN
+- second Ethernet adapter used as `eth1` / WAN
+- Linux setup computer connected by Ethernet to the Pi built-in RJ45
+- upstream router LAN connected to the Pi second Ethernet adapter
+- Raspberry Pi initially reachable over Wi-Fi for SSH
 
 Tested software baseline:
 
@@ -20,7 +22,7 @@ Tested software baseline:
 - NetworkManager
 - LightDM
 - `rpd-labwc` desktop session
-- Proton VPN Linux CLI
+- Proton VPN Linux CLI installed by the canonical setup flow
 
 Raspberry Pi OS Desktop is recommended rather than Raspberry Pi OS Lite because this design uses:
 
@@ -32,7 +34,7 @@ Raspberry Pi OS Desktop is recommended rather than Raspberry Pi OS Lite because 
 
 > Proton does not officially support Raspberry Pi OS/Raspbian. This project uses the Debian ARM64 packages and has been tested successfully on Raspberry Pi OS Desktop, but this is not an officially supported Proton platform.
 
-Do not put Proton credentials, keyrings, WireGuard private keys, or real bypass-device identities into this repository.
+Do not put Proton credentials, keyrings, WireGuard private keys, or real bypass-device identities into this repository or into shell scripts.
 
 ---
 
@@ -40,1018 +42,463 @@ Do not put Proton credentials, keyrings, WireGuard private keys, or real bypass-
 
 Flash a fresh 64-bit Raspberry Pi OS Desktop image.
 
-During initial setup, create the account that will own the Proton VPN session.
-
-The repository example uses:
+During initial setup, create the account that will own the Proton VPN session. The repository example uses:
 
 ```text
 admin
 ```
 
-A different username is supported. It must match `ROUTER_USER` in `/etc/proton-router.conf`.
+A different username is supported as long as it is the router account used by the setup flow.
 
-Before changing networking, update the OS:
+Before beginning the router installation:
 
-```bash
-sudo apt update
-sudo apt full-upgrade -y
-```
+1. Enable SSH.
+2. Connect the Pi to Wi-Fi so the Linux setup computer can reach it initially.
+3. Do not manually assign a static address to either Pi Ethernet interface.
+4. Leave the Linux setup computer's Pi-facing Ethernet interface configured for automatic DHCP.
+5. Connect the physical Ethernet topology described in Section 4.
 
-A reboot after the OS upgrade is recommended if the upgrade installed a new kernel:
+To match the automated installer flow, do not manually pre-install Proton, create NetworkManager `LAN`/`WAN` profiles, edit nftables, edit dnsmasq, initialize the Proton keyring, or enable the router services. Those operations belong to the canonical `setup` phases.
 
-```bash
-sudo reboot
-```
+An OS update performed before this procedure is outside the installer parity path. If you choose to update the base OS first and the update installs a new kernel, reboot before beginning Section 3.
 
 ---
 
-## 3. Place the router release on the Pi
+## 3. Place and verify the certified router release
 
-For exact parity with the automated installer, place the router release tree at:
+For parity with the automated installer, use the release archive rather than manually copying an already-configured router tree.
+
+Place these two files in the router user's home directory:
+
+```text
+~/proton-router-v0.0.0.tar.gz
+~/proton-router-v0.0.0.sha256.txt
+```
+
+Verify that the archive hash matches the hash recorded in the sidecar:
+
+```bash
+cd ~
+
+archive_sha="$(sha256sum proton-router-v0.0.0.tar.gz | awk '{print $1}')"
+sidecar_sha="$(grep -Eio '[0-9a-f]{64}' proton-router-v0.0.0.sha256.txt | head -n 1 | tr '[:lower:]' '[:upper:]')"
+archive_sha_upper="$(printf '%s' "$archive_sha" | tr '[:lower:]' '[:upper:]')"
+
+test -n "$sidecar_sha" && \
+    test "$archive_sha_upper" = "$sidecar_sha" && \
+    echo "archive-sha256=PASS"
+```
+
+If `archive-sha256=PASS` is not printed, stop.
+
+For release authenticity, the sidecar hash should also be compared with the hash published for the release. The Windows installer performs an additional compiled-in SHA-256 certification check that is Windows-installer-specific.
+
+Extract a clean copy:
+
+```bash
+cd ~
+rm -rf ~/proton-router-v0.0.0
+
+tar -xzf ~/proton-router-v0.0.0.tar.gz
+chmod +x ~/proton-router-v0.0.0/setup
+```
+
+Enter the release directory:
+
+```bash
+cd ~/proton-router-v0.0.0
+```
+
+Verify the setup entry point:
+
+```bash
+./setup --help >/dev/null &&
+    echo "setup entry point OK"
+```
+
+Expected:
+
+```text
+setup entry point OK
+```
+
+All remaining relative paths in this guide assume the release exists at:
 
 ```text
 ~/proton-router-v0.0.0
 ```
 
-All remaining relative paths in this guide assume the shell is in the repository root.
-
 ---
 
-## 4. Identify the network interfaces
+## 4. Verify the physical topology and Pi interfaces
 
-Check the available interfaces:
+On the Pi, inspect the available interfaces:
 
 ```bash
 ip -br link
 ```
 
-The tested hardware uses:
+The certified/tested topology used by the automated installer is:
 
 ```text
-eth0 = LAN
-eth1 = WAN
+Linux setup computer Ethernet -> built-in Pi RJ45 -> eth0 -> LAN
+upstream router LAN            -> second Pi RJ45   -> eth1 -> WAN
+Pi Wi-Fi                       -> initial SSH management path
 ```
 
-Do not assume those names on different hardware.
+Both Ethernet cables must be connected before installation.
 
-The WAN interface should be the adapter connected to the ISP modem.
-
-The LAN interface should be the adapter connected to the downstream switch or wireless access point.
-
-Also verify the desktop session:
+Verify carrier exactly as the automated installer does:
 
 ```bash
-ls /usr/share/wayland-sessions
-ls /usr/share/xsessions 2>/dev/null || true
-```
-
-The tested Raspberry Pi OS session is:
-
-```text
-rpd-labwc
-```
-
----
-
-## 5. Install Proton VPN and router packages
-
-Add Proton's official stable Debian package repository using the current instructions from Proton's Debian/Ubuntu installation documentation.
-
-Repository bootstrap packages and checksums can change over time, so this project does not duplicate that bootstrap package.
-
-After the Proton repository has been added:
-
-```bash
-sudo apt update
-```
-
-Install the runtime packages listed by this project:
-
-```bash
-grep -vE '^[[:space:]]*(#|$)' requirements-apt.txt |
-    xargs -r sudo apt install -y
-```
-
-The required project packages are currently:
-
-```text
-dnsmasq
-nftables
-proton-vpn-cli
-```
-
-Raspberry Pi OS Desktop supplies the other platform components used by the scripts, including NetworkManager, Python 3, systemd, sudo, D-Bus, and the desktop environment.
-
-Verify the important commands exist:
-
-```bash
-for cmd in \
-    protonvpn \
-    dnsmasq \
-    nft \
-    nmcli \
-    ip \
-    python3 \
-    gnome-keyring-daemon \
-    dbus-run-session \
-    gdbus \
-    systemd-analyze \
-    visudo
-do
-    command -v "$cmd" || echo "MISSING: $cmd"
-done
-```
-
-Do not continue if any required command is reported missing.
-
----
-
-## 6. Install the master router configuration
-
-Install the example configuration:
-
-```bash
-sudo install -m 0644 \
-    config/proton-router.conf.example \
-    /etc/proton-router.conf
-```
-
-Edit it:
-
-```bash
-sudo nano /etc/proton-router.conf
-```
-
-At minimum, verify:
-
-```text
-ROUTER_USER
-ROUTER_SESSION
-LAN_IF
-WAN_IF
-LAN_ADDR
-LAN_PREFIX
-DHCP_START
-DHCP_END
-DHCP_LEASE
-DNS_UPSTREAM
-```
-
-The tested defaults are:
-
-```text
-ROUTER_USER="admin"
-ROUTER_SESSION="rpd-labwc"
-
-LAN_IF="eth0"
-WAN_IF="eth1"
-
-LAN_ADDR="192.168.50.1"
-LAN_PREFIX="24"
-
-DHCP_START="192.168.50.100"
-DHCP_END="192.168.50.220"
-DHCP_LEASE="12h"
-
-DNS_UPSTREAM="1.1.1.3"
-```
-
-The bypass mark, routing table, and policy-rule priority normally do not need changing:
-
-```text
-BYPASS_MARK="0x50564250"
-BYPASS_TABLE="200"
-BYPASS_RULE_PRIORITY="10000"
-```
-
-Load the configuration into the current shell:
-
-```bash
-. /etc/proton-router.conf
-```
-
-For this setup procedure, the current desktop account should be the configured router account:
-
-```bash
-test "$(id -un)" = "$ROUTER_USER" &&
-    echo "router user OK"
-```
-
-If that does not print `router user OK`, stop and log in as the configured router user.
-
----
-
-## 7. Install the core system files
-
-Install the router scripts:
-
-```bash
-sudo install -m 0755 \
-    scripts/proton-router-apply-conf \
-    /usr/local/sbin/proton-router-apply-conf
-
-sudo install -m 0755 \
-    scripts/proton-bypass \
-    /usr/local/sbin/proton-bypass
-
-sudo install -m 0755 \
-    scripts/proton-keyring-init \
-    /usr/local/sbin/proton-keyring-init
-```
-
-Install the static nftables configuration:
-
-```bash
-sudo install -m 0644 \
-    config/nftables.conf \
-    /etc/nftables.conf
-```
-
-Install the static dnsmasq policy:
-
-```bash
-sudo install -d -m 0755 /etc/dnsmasq.d
-
-sudo install -m 0644 \
-    config/dnsmasq-router.conf \
-    /etc/dnsmasq.d/router.conf
-```
-
-Install IPv4 forwarding configuration:
-
-```bash
-sudo install -m 0644 \
-    config/99-router.conf \
-    /etc/sysctl.d/99-router.conf
-
-sudo sysctl -p /etc/sysctl.d/99-router.conf
-```
-
-Create the bypass-device state directory with an empty device list:
-
-```bash
-sudo install -d -m 0755 /etc/proton-bypass
-
-sudo install -m 0644 \
-    config/proton-bypass-devices.conf.example \
-    /etc/proton-bypass/devices.conf
-```
-
-Real device MAC addresses must not be committed to Git.
-
----
-
-## 8. Install the NetworkManager dispatcher
-
-The same `proton-bypass` executable is used as both the administrator CLI and the NetworkManager dispatcher.
-
-Create the dispatcher directory:
-
-```bash
-sudo install -d -m 0755 \
-    /etc/NetworkManager/dispatcher.d
-```
-
-Remove an old dispatcher copy if present:
-
-```bash
-sudo rm -f \
-    /etc/NetworkManager/dispatcher.d/90-proton-bypass
-```
-
-Create a hardlink:
-
-```bash
-sudo ln \
-    /usr/local/sbin/proton-bypass \
-    /etc/NetworkManager/dispatcher.d/90-proton-bypass
-```
-
-Verify that both paths have the same inode:
-
-```bash
-stat -c '%i  %U:%G  %a  %n' \
-    /usr/local/sbin/proton-bypass \
-    /etc/NetworkManager/dispatcher.d/90-proton-bypass
-```
-
-The inode numbers must match.
-
-Both files should be:
-
-```text
-root:root
-755
-```
-
-The dispatcher must ignore non-WAN NetworkManager events and return success for them.
-
-A safe test is:
-
-```bash
-sudo env NM_DISPATCHER_ACTION=up \
-    /etc/NetworkManager/dispatcher.d/90-proton-bypass \
-    "$LAN_IF" up
-
-echo $?
+printf 'eth0='
+cat /sys/class/net/eth0/carrier
+printf 'eth1='
+cat /sys/class/net/eth1/carrier
 ```
 
 Expected:
 
 ```text
-0
+eth0=1
+eth1=1
 ```
+
+Do not continue until both links report carrier.
+
+The current automated installer assumes `eth0` is LAN and `eth1` is WAN on the tested hardware. If different hardware produces different interface names, this document is no longer an exact reproduction of the current `Program.cs` flow without corresponding project changes.
+
+Make sure the Linux setup computer can still SSH to the Pi over Wi-Fi before starting Section 5.
 
 ---
 
-## 9. Install the NetworkManager wait-online override
+## 5. Run the canonical pre-reboot phase over Wi-Fi
 
-The ISP may take longer than one DHCP attempt to issue a WAN lease.
-
-The router therefore allows boot to continue once NetworkManager has usable connectivity instead of requiring every startup autoconnect attempt to settle.
-
-Install the override:
+From the Linux setup computer, SSH to the fresh Pi using its Wi-Fi hostname or address:
 
 ```bash
-sudo install -d -m 0755 \
-    /etc/systemd/system/NetworkManager-wait-online.service.d
-
-sudo install -m 0644 \
-    config/NetworkManager-wait-online.override.conf \
-    /etc/systemd/system/NetworkManager-wait-online.service.d/override.conf
+ssh <ROUTER_USER>@<PI_WIFI_HOST>
 ```
 
-The override should contain:
-
-```ini
-[Service]
-ExecStart=
-ExecStart=/usr/bin/nm-online -q --timeout=30
-```
-
-Reload systemd:
+Enter the release directory:
 
 ```bash
-sudo systemctl daemon-reload
+cd ~/proton-router-v0.0.0
 ```
 
-This does not disable WAN DHCP retries. It only prevents slow ISP DHCP from holding `network-online.target` indefinitely.
-
----
-
-## 10. Install the router-user files
-
-Create the user directories:
+Run the same pre-reboot phase used by the automated installer:
 
 ```bash
-mkdir -p \
-    ~/.local/bin \
-    ~/.config/systemd/user \
-    ~/.config/autostart
+./setup \
+    --live \
+    --allow-live-install \
+    --phase pre-reboot \
+    --allow-network-cutover \
+    --allow-wifi-disable \
+    --non-interactive
 ```
 
-Install the Proton autoconnect helper:
+This phase owns the package installation, project file installation, initial NetworkManager configuration, keyring preparation, boot-service preparation, firewall/dnsmasq configuration, temporary provisioning DHCP state, and Wi-Fi-to-LAN management handoff.
 
-```bash
-install -m 0755 \
-    scripts/protonvpn-autoconnect \
-    ~/.local/bin/protonvpn-autoconnect
-```
+There are two valid outcomes.
 
-Install the Proton user systemd service:
-
-```bash
-install -m 0644 \
-    config/protonvpn-autoconnect.service \
-    ~/.config/systemd/user/protonvpn-autoconnect.service
-```
-
-Install the Secret Service desktop autostart entry:
-
-```bash
-install -m 0644 \
-    config/gnome-keyring-secrets.desktop \
-    ~/.config/autostart/gnome-keyring-secrets.desktop
-```
-
-Do not enable `protonvpn-autoconnect.service` yet. Proton has not been signed in.
-
----
-
-## 11. Install the router web interface
-
-The router includes a small single-page web interface for viewing Proton VPN status and managing per-client Proton bypass state.
-
-It uses only Python 3's standard library. No web framework, Node.js runtime, database, nginx, or Apache is required.
-
-Install the web application files:
-
-```bash
-sudo install -d -m 0755 \
-    /usr/local/share/proton-router-web
-
-sudo install -m 0755 \
-    web/server.py \
-    /usr/local/share/proton-router-web/server.py
-
-sudo install -m 0644 \
-    web/index.html \
-    web/app.js \
-    web/styles.css \
-    /usr/local/share/proton-router-web/
-```
-
-Install the user service:
-
-```bash
-install -m 0644 \
-    config/proton-router-web.service \
-    ~/.config/systemd/user/proton-router-web.service
-```
-
-The service should contain:
-
-```ini
-[Unit]
-Description=Proton Router web interface
-Wants=gnome-keyring-daemon.service
-After=gnome-keyring-daemon.service
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /usr/local/share/proton-router-web/server.py
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=default.target
-```
-
-Do not start or enable the service yet. The generated sudoers policy required for bypass changes is installed by `proton-router-apply-conf` later in this procedure.
-
-The web service listens on TCP port `8080`.
-
-The backend accepts requests only from the configured LAN subnet or loopback and also restricts the accepted Host header to the router LAN IP, `127.0.0.1`, or `localhost`.
-
-The router firewall does not permit WAN clients to access the service.
-
-The web UI intentionally has no separate login screen. Anyone on the trusted LAN who can reach the page can request a bypass change, so do not expose TCP port 8080 through the WAN or an untrusted network.
-
-The backend does not expose a generic shell endpoint. Bypass changes are validated as LAN MAC/IPv4 pairs and can invoke only:
+If the phase prints:
 
 ```text
-/usr/local/sbin/proton-bypass add <MAC> <IPv4>
-/usr/local/sbin/proton-bypass remove <MAC> <IPv4>
+pre-reboot stage complete
+REBOOT REQUIRED before post-reboot
 ```
 
----
+the entire pre-reboot phase completed without requiring a separate LAN handoff. Skip directly to Section 8.
 
-## 12. Remove conflicting LightDM autologin settings
-
-`proton-router-apply-conf` generates:
+When setup is being performed through Wi-Fi SSH, the normal expected outcome is that setup stops at the management handoff gate after messages including:
 
 ```text
-/etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf
+provisioning DHCP enabled
+refusing to disable Wi-Fi
 ```
 
-LightDM's main configuration file is read after the drop-in directory, so active autologin settings in `/etc/lightdm/lightdm.conf` would override the generated router configuration.
-
-Back up the original file:
-
-```bash
-sudo cp -a \
-    /etc/lightdm/lightdm.conf \
-    /root/lightdm.conf.pre-proton-router
-```
-
-Comment any active autologin user/session values:
-
-```bash
-sudo sed -i \
-    -e 's/^[[:space:]]*autologin-user=.*/# autologin-user managed by \/etc\/lightdm\/lightdm.conf.d\/90-proton-router-autologin.conf/' \
-    -e 's/^[[:space:]]*autologin-session=.*/# autologin-session managed by \/etc\/lightdm\/lightdm.conf.d\/90-proton-router-autologin.conf/' \
-    /etc/lightdm/lightdm.conf
-```
+If those messages are reached, continue with Section 6.
 
 Do not reboot yet.
 
 ---
 
-## 13. Configure NetworkManager
+## 6. Move the Linux setup computer from Wi-Fi management to Pi LAN
 
-This step can change or interrupt SSH connectivity.
+The Pi is now temporarily providing provisioning DHCP on its LAN interface.
 
-A local keyboard/monitor is recommended for the initial network cutover.
+The Linux setup computer's Ethernet interface must remain configured for automatic DHCP. Do not assign a static address.
 
-Reload the master configuration if necessary:
-
-```bash
-. /etc/proton-router.conf
-```
-
-Remove previous project profiles if this is a retry:
+If the Linux setup computer uses NetworkManager, identify the Ethernet interface connected directly to the Pi:
 
 ```bash
-sudo nmcli connection delete LAN 2>/dev/null || true
-sudo nmcli connection delete WAN 2>/dev/null || true
+nmcli device status
 ```
 
-Create the LAN profile:
+Replace `<CLIENT_ETH_IF>` below with that interface and cycle it once:
 
 ```bash
-sudo nmcli connection add \
-    type ethernet \
-    ifname "$LAN_IF" \
-    con-name LAN
-
-sudo nmcli connection modify LAN \
-    connection.autoconnect yes \
-    connection.autoconnect-priority 100 \
-    ipv4.method manual \
-    ipv4.addresses "$LAN_ADDR/$LAN_PREFIX" \
-    ipv4.gateway "" \
-    ipv4.never-default yes \
-    ipv6.method disabled
+nmcli device disconnect <CLIENT_ETH_IF>
+nmcli device connect <CLIENT_ETH_IF>
 ```
 
-Create the WAN profile.
-
-For initial setup, allow the ISP-provided DNS temporarily so Proton can be installed and the first router configuration can be completed:
+Inspect the resulting IPv4 state:
 
 ```bash
-sudo nmcli connection add \
-    type ethernet \
-    ifname "$WAN_IF" \
-    con-name WAN
-
-sudo nmcli connection modify WAN \
-    connection.autoconnect yes \
-    connection.autoconnect-priority 100 \
-    ipv4.method auto \
-    ipv4.never-default no \
-    ipv4.ignore-auto-dns no \
-    ipv6.method disabled
+nmcli -g \
+    IP4.ADDRESS,IP4.GATEWAY,IP4.DNS \
+    device show <CLIENT_ETH_IF>
 ```
 
-Bring up the WAN:
+During the provisioning stage, the Ethernet interface must receive an address in:
+
+```text
+192.168.50.0/24
+```
+
+For example:
+
+```text
+192.168.50.100/24
+```
+
+At this stage the Pi-facing Ethernet connection should have no default gateway and no DNS server supplied by the Pi.
+
+Connect to the Pi over LAN:
 
 ```bash
-sudo nmcli connection up WAN
+ssh <ROUTER_USER>@192.168.50.1
 ```
 
-Verify that the ISP has provided a default route:
-
-```bash
-ip -4 route show default dev "$WAN_IF"
-```
-
-Do not continue until a WAN default route exists.
-
-Bring up the LAN:
-
-```bash
-sudo nmcli connection up LAN
-```
-
-Verify:
-
-```bash
-ip -4 addr show dev "$LAN_IF"
-```
-
-The configured router address should be present.
-
-Check all active connections:
-
-```bash
-nmcli connection show --active
-```
-
-If other Ethernet profiles compete with `LAN` or `WAN`, disable their autoconnect or remove them.
+Do not continue until LAN SSH works.
 
 ---
 
-## 14. Disable Raspberry Pi Wi-Fi
+## 7. Resume the pre-reboot phase over LAN
 
-Do this only after Ethernet administration is working.
-
-If the current SSH connection uses Wi-Fi, it will be disconnected.
-
-Disable the Wi-Fi radio:
+After reconnecting to the Pi at `192.168.50.1`, enter the release directory:
 
 ```bash
-nmcli radio wifi off
+cd ~/proton-router-v0.0.0
 ```
 
-Verify:
+Remove any checkpoint left by an earlier incomplete installation attempt:
 
 ```bash
-nmcli radio wifi
+sudo rm -f \
+    /var/lib/proton-router-setup/reboot-required.boot-id
 ```
 
-Expected:
+Run the same LAN resume phase used by the automated installer:
+
+```bash
+./setup \
+    --live \
+    --allow-live-install \
+    --phase pre-reboot-resume \
+    --allow-network-cutover \
+    --allow-wifi-disable \
+    --non-interactive
+```
+
+Successful completion must reach:
 
 ```text
-disabled
+pre-reboot stage complete
+REBOOT REQUIRED before post-reboot
 ```
 
-This prevents an unintended alternate Internet path around the router's designated WAN.
+### If SSH disconnects near the end of the resume phase
+
+Reconnect to the Pi over LAN:
+
+```bash
+ssh <ROUTER_USER>@192.168.50.1
+```
+
+Then verify the same reboot checkpoint that the automated installer trusts after a late SSH disconnect:
+
+```bash
+test "$(
+    sudo cat \
+        /var/lib/proton-router-setup/reboot-required.boot-id \
+        2>/dev/null
+)" = "$(
+    cat /proc/sys/kernel/random/boot_id
+)" &&
+    echo "PRE_REBOOT_CHECKPOINT_OK"
+```
+
+If this prints:
+
+```text
+PRE_REBOOT_CHECKPOINT_OK
+```
+
+the pre-reboot phase completed successfully even though the SSH transport disappeared before its final output was received.
+
+If it does not print that message, do not reboot. Re-run `pre-reboot-resume` and diagnose the failed gate first.
 
 ---
 
-## 15. Initialize the Proton keyring
+## 8. Perform the first reboot
 
-This router intentionally uses a dedicated empty-password GNOME login keyring so Proton can retrieve its stored session without an interactive unlock prompt after unattended boot.
-
-Run the initializer as the router user, **not with sudo**:
-
-```bash
-/usr/local/sbin/proton-keyring-init
-```
-
-On a clean router account, expected output is:
-
-```text
-proton-keyring-init: empty-password login keyring initialized
-```
-
-Verify:
-
-```bash
-test -s ~/.local/share/keyrings/login.keyring &&
-    echo "login keyring created"
-```
-
-If the initializer instead reports:
-
-```text
-proton-keyring-init: existing keyring found; leaving it untouched
-```
-
-stop the unattended-login portion of this procedure.
-
-The initializer deliberately refuses to replace or modify an existing keyring because it may contain unrelated secrets. Do not delete an existing keyring blindly.
-
-For clean-room reproducibility testing, use a fresh router account or fresh image if an unexpected keyring already exists.
-
-Never copy the resulting keyring into Git.
-
----
-
-## 16. Apply the router configuration
+Only reboot after the pre-reboot phase has reached its reboot checkpoint.
 
 Run:
 
 ```bash
-sudo proton-router-apply-conf
+sudo reboot
 ```
 
-A successful run should end with output similar to:
-
-```text
-dnsmasq: syntax check OK.
-Connection successfully reapplied to device 'eth0'.
-proton-bypass synchronized
-proton-router configuration applied
-```
-
-The apply command generates and validates:
-
-```text
-/etc/nftables.d/generated-vars.nft
-/etc/dnsmasq.d/generated-vars.conf
-/etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf
-/etc/polkit-1/rules.d/49-protonvpn-networkmanager.rules
-/etc/sudoers.d/protonvpn-bootstrap
-/etc/systemd/system/proton-keyring-init.service
-```
-
-It also:
-
-- reapplies the configured LAN address
-- restarts dnsmasq
-- loads the nftables firewall
-- rebuilds the bypass policy-routing state
-- reloads systemd
-- enables `proton-keyring-init.service`
-
-The generated sudoers policy grants the configured router user passwordless access only to the Proton bootstrap commands and the two `proton-bypass` mutation forms required by the web UI:
-
-```text
-/usr/local/sbin/proton-bypass add *
-/usr/local/sbin/proton-bypass remove *
-```
-
-`proton-bypass` itself requires exactly one MAC address and one IPv4 address for `add` and `remove` and validates both before changing router state.
-
-The web backend is not granted unrestricted root access.
-
-Verify the generated policy:
+The Ethernet carrier can return before the Pi DHCP service is fully ready. Give the Pi time to boot, then renew the Linux setup computer's wired DHCP lease by reconnecting the interface if necessary:
 
 ```bash
-sudo visudo -cf \
-    /etc/sudoers.d/protonvpn-bootstrap
+nmcli device disconnect <CLIENT_ETH_IF>
+nmcli device connect <CLIENT_ETH_IF>
 ```
 
-Expected:
+The setup computer should again obtain a `192.168.50.x` address.
 
-```text
-/etc/sudoers.d/protonvpn-bootstrap: parsed OK
+Reconnect:
+
+```bash
+ssh <ROUTER_USER>@192.168.50.1
 ```
 
-At this point the router's raw-WAN host firewall is fail-closed.
+Do not manually connect Proton at this point.
 
 ---
 
-## 17. Test and enable the router web interface
+## 9. Run the canonical post-reboot phase
 
-Reload the router user's systemd manager:
-
-```bash
-systemctl --user daemon-reload
-```
-
-Start the web service for the first test:
+Enter the release directory:
 
 ```bash
-systemctl --user start \
-    proton-router-web.service
+cd ~/proton-router-v0.0.0
 ```
 
-Wait briefly for Python to bind the socket:
+Run the same post-reboot phase used by the automated installer:
 
 ```bash
-sleep 2
+./setup \
+    --live \
+    --allow-live-install \
+    --phase post-reboot
 ```
 
-Check its status:
-
-```bash
-systemctl --user status \
-    proton-router-web.service \
-    --no-pager -l
-```
-
-Expected:
+When prompted:
 
 ```text
-Active: active (running)
+Proton account username or email:
 ```
 
-Verify the listening socket:
+enter the Proton account username or email.
+
+When prompted for the Proton password, enter it normally.
+
+Do not place Proton credentials in shell history, configuration files, scripts, or Git.
+
+The setup phase owns the temporary Proton bootstrap firewall opening and closing, Proton sign-in/configuration, managed connection validation, and unattended service enablement.
+
+Do not manually add an unrestricted bootstrap firewall rule and do not use bare:
 
 ```bash
-ss -ltn |
-    grep ':8080'
+protonvpn connect
 ```
 
-Expected output should show a listener on:
+for normal router operation.
+
+The dynamic VPN endpoint refresh infrastructure is installed and its timer is enabled, but the initial endpoint database build is intentionally deferred. Building that database is not an installation gate.
+
+Successful completion must include:
 
 ```text
-0.0.0.0:8080
+Proton managed connection verified
+proton0 WireGuard interface verified
+post-reboot stage complete
+FINAL REBOOT REQUIRED for unattended verification
 ```
 
-Test both read-only API endpoints using Python's standard library:
-
-```bash
-python3 - <<'PY'
-import json
-import urllib.request
-
-for path in ("/api/status", "/api/clients"):
-    with urllib.request.urlopen(
-        "http://127.0.0.1:8080" + path,
-        timeout=10,
-    ) as response:
-        payload = json.load(response)
-        print(
-            path,
-            response.status,
-            "OK" if payload.get("ok") else payload,
-        )
-PY
-```
-
-Expected:
-
-```text
-/api/status 200 OK
-/api/clients 200 OK
-```
-
-Test the static assets:
-
-```bash
-python3 - <<'PY'
-import urllib.request
-
-for path in ("/", "/app.js", "/styles.css"):
-    with urllib.request.urlopen(
-        "http://127.0.0.1:8080" + path,
-        timeout=5,
-    ) as response:
-        body = response.read()
-        print(
-            path,
-            response.status,
-            len(body),
-            response.headers.get("Content-Type"),
-        )
-PY
-```
-
-Each path should return HTTP `200`.
-
-Load the master configuration and print the browser URL:
-
-```bash
-. /etc/proton-router.conf
-printf 'Open: http://%s:8080/\n' "$LAN_ADDR"
-```
-
-Open that URL from a device on the LAN.
-
-With the default configuration:
-
-```text
-http://192.168.50.1:8080/
-```
-
-The page should show:
-
-- Proton VPN connection state
-- Proton server, protocol, and load when available
-- WAN readiness and current gateway
-- configured LAN address/interface
-- known LAN clients discovered from the neighbor table and dnsmasq leases
-- whether each client currently uses Proton or raw-WAN bypass
-- a button to add or remove bypass for known MAC/IP pairs
-
-Before enabling automatic startup, verify that the sudoers policy contains only the intended web mutation commands:
-
-```bash
-sudo grep -E \
-    'PROTONROUTER_WEB|NOPASSWD' \
-    /etc/sudoers.d/protonvpn-bootstrap
-```
-
-It should include:
-
-```text
-Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *
-```
-
-A safe direct sudo test is to re-add a device that is already configured for bypass:
-
-```bash
-sudo -n /usr/local/sbin/proton-bypass \
-    add aa:bb:cc:dd:ee:ff 192.168.50.180
-```
-
-Use a MAC/IP pair that is already present in `sudo proton-bypass list`.
-
-The command should return success without changing the desired routing state.
-
-For a full web API round-trip test, temporarily remove and then restore an already-bypassed device:
-
-```bash
-python3 - <<'PY'
-import json
-import urllib.request
-
-URL = "http://127.0.0.1:8080/api/bypass"
-
-device = {
-    "mac": "aa:bb:cc:dd:ee:ff",
-    "ip": "192.168.50.180",
-}
-
-body = json.dumps(device).encode("utf-8")
-
-def request(method):
-    req = urllib.request.Request(
-        URL,
-        data=body,
-        method=method,
-        headers={"Content-Type": "application/json"},
-    )
-
-    with urllib.request.urlopen(
-        req,
-        timeout=10,
-    ) as response:
-        payload = json.load(response)
-        print(method, response.status, payload)
-
-request("DELETE")
-request("POST")
-PY
-```
-
-Replace the example MAC/IP with a device that is already configured for bypass.
-
-The final `POST` must restore the original bypass state.
-
-Enable the web service:
-
-```bash
-systemctl --user enable \
-    proton-router-web.service
-```
-
-Verify:
-
-```bash
-systemctl --user is-enabled \
-    proton-router-web.service
-
-systemctl --user is-active \
-    proton-router-web.service
-```
-
-Expected:
-
-```text
-enabled
-active
-```
-
-Because this is a user service, it starts automatically with the router user's unattended desktop login.
+Do not continue to the final reboot unless those checks complete.
 
 ---
 
-## 18. Point the router itself at dnsmasq
+## 10. Recover from a post-reboot SSH interruption
 
-Now that dnsmasq is configured and running, prevent the WAN DHCP lease from installing ISP DNS servers.
+The Proton/NetworkManager transition can occasionally interrupt an SSH session even when the post-reboot work has continued successfully.
 
-Run:
-
-```bash
-sudo nmcli connection modify WAN \
-    ipv4.ignore-auto-dns yes \
-    ipv4.dns "127.0.0.1" \
-    ipv6.method disabled
-```
-
-Reapply the active WAN profile:
+If SSH disconnects while Section 9 is running, reconnect:
 
 ```bash
-sudo nmcli device reapply "$WAN_IF"
+ssh <ROUTER_USER>@192.168.50.1
 ```
 
-If reapply is unavailable for some reason:
+Enter the release directory again:
 
 ```bash
-sudo nmcli connection up WAN
+cd ~/proton-router-v0.0.0
 ```
 
-Verify:
+Re-run the same post-reboot phase:
 
 ```bash
-grep '^nameserver' /etc/resolv.conf
+./setup \
+    --live \
+    --allow-live-install \
+    --phase post-reboot
 ```
 
-Expected:
+Continue only after it reaches:
 
 ```text
-nameserver 127.0.0.1
+post-reboot stage complete
+FINAL REBOOT REQUIRED for unattended verification
 ```
 
 ---
 
-## 19. Enable system services
+## 11. Refresh the Linux client's DHCP lease after router promotion
 
-Enable the required boot services:
+After the post-reboot phase succeeds, the LAN has been promoted from temporary provisioning DHCP to normal router DHCP.
 
-```bash
-sudo systemctl enable \
-    NetworkManager.service \
-    NetworkManager-wait-online.service \
-    nftables.service \
-    dnsmasq.service \
-    lightdm.service
-```
-
-Verify that the generated keyring service was enabled by the apply command:
+Keep the Linux setup computer's Ethernet interface in automatic DHCP mode and reconnect it:
 
 ```bash
-systemctl is-enabled \
-    proton-keyring-init.service
+nmcli device disconnect <CLIENT_ETH_IF>
+nmcli device connect <CLIENT_ETH_IF>
 ```
 
-Expected:
+Inspect the resulting configuration:
+
+```bash
+nmcli -g \
+    IP4.ADDRESS,IP4.GATEWAY,IP4.DNS \
+    device show <CLIENT_ETH_IF>
+```
+
+The Pi-facing Ethernet connection must now have:
 
 ```text
-enabled
+IPv4 address: 192.168.50.x
+gateway:      192.168.50.1
+DNS:          192.168.50.1
 ```
 
-Do not enable Proton autoconnect yet.
+The exact client address may vary.
 
-The router web service may already be enabled from the previous section; that is fine.
+Do not manually assign a static address.
 
 ---
 
-## 20. First reboot
+## 12. Perform the final unattended reboot
+
+Reconnect to the Pi if necessary:
+
+```bash
+ssh <ROUTER_USER>@192.168.50.1
+```
 
 Reboot:
 
@@ -1059,275 +506,37 @@ Reboot:
 sudo reboot
 ```
 
-The expected boot sequence is:
+Do not manually run Proton after this reboot.
 
-1. NetworkManager starts LAN and begins WAN DHCP.
-2. The router does not require every WAN DHCP autoconnect attempt to settle before local boot can continue.
-3. `proton-keyring-init.service` runs before LightDM.
-4. LightDM automatically logs in `ROUTER_USER`.
-5. the desktop starts GNOME Secret Service.
-6. nftables and dnsmasq are active.
-7. the web interface starts with the router user's session.
-8. Proton remains disconnected because Proton autoconnect has not yet been enabled.
+This reboot proves that the complete router stack can start without interactive assistance.
 
-After logging back in, verify the Secret Service exists:
-
-```bash
-busctl --user --list |
-    grep '^org.freedesktop.secrets'
-```
-
-Do not continue until that service is present.
-
-Verify the web service:
-
-```bash
-systemctl --user is-enabled \
-    proton-router-web.service
-
-systemctl --user is-active \
-    proton-router-web.service
-```
-
-Expected:
-
-```text
-enabled
-active
-```
+After the Pi begins returning, renew the Linux setup computer's Ethernet DHCP lease if necessary and reconnect to `192.168.50.1`.
 
 ---
 
-## 21. Sign in to Proton once
+## 13. Wait for unattended Proton connection
 
-The router firewall now blocks ordinary Pi-originated raw-WAN traffic.
-
-For the one-time Proton sign-in, temporarily open the dedicated bootstrap chain.
-
-First make sure it is closed:
+Reconnect to the Pi:
 
 ```bash
-sudo nft flush chain \
-    inet router_filter host_wan_bootstrap
+ssh <ROUTER_USER>@192.168.50.1
 ```
 
-Open it:
+Give Proton up to three minutes to connect automatically, matching the automated installer's unattended-Proton gate:
 
 ```bash
-sudo nft add rule \
-    inet router_filter host_wan_bootstrap accept
-```
+for _ in $(seq 1 60); do
+    if protonvpn status 2>/dev/null |
+        grep -q '^Status: Connected'
+    then
+        break
+    fi
 
-Sign in:
-
-```bash
-protonvpn signin YOUR_PROTON_USERNAME
-```
-
-Enter the Proton account password when prompted.
-
-Configure the tested router settings:
-
-```bash
-protonvpn config set kill-switch standard
-protonvpn config set ipv6 off
-```
-
-Verify:
-
-```bash
-protonvpn config list
-```
-
-The important values are:
-
-```text
-kill-switch    standard
-ipv6           off
-```
-
-Immediately close the temporary bootstrap gate:
-
-```bash
-sudo nft flush chain \
-    inet router_filter host_wan_bootstrap
-```
-
-Do not leave this chain open.
-
-Proton credentials and session information are stored in the user's keyring and must never be committed to Git.
-
----
-
-## 22. Test the managed Proton connection
-
-Do not use bare `protonvpn connect` for normal router operation.
-
-The router's fail-closed firewall intentionally prevents an unwrapped Proton connection attempt from using unrestricted raw WAN.
-
-Instead run:
-
-```bash
-~/.local/bin/protonvpn-autoconnect
-```
-
-This helper:
-
-1. reads `WAN_IF` from `/etc/proton-router.conf`
-2. waits for the WAN to have an IPv4 default route
-3. waits for Secret Service
-4. confirms Proton is not already connected
-5. temporarily opens the host bootstrap firewall
-6. runs `protonvpn connect`
-7. closes the bootstrap firewall on both success and failure
-
-Verify:
-
-```bash
-protonvpn status
-```
-
-Expected:
-
-```text
-Status: Connected
-```
-
-The actual free Proton server can change dynamically.
-
-The web UI should now reflect the live Proton state within its normal refresh interval.
-
----
-
-## 23. Enable Proton autoconnect
-
-Reload the router user's systemd manager:
-
-```bash
-systemctl --user daemon-reload
-```
-
-Enable the service:
-
-```bash
-systemctl --user enable \
-    protonvpn-autoconnect.service
-```
-
-Verify:
-
-```bash
-systemctl --user is-enabled \
-    protonvpn-autoconnect.service
-```
-
-Expected:
-
-```text
-enabled
-```
-
-The service can appear `inactive` after a successful connection. This is normal: the helper exits successfully after Proton is connected, and the unit only restarts on failure.
-
----
-
-## 24. Final unattended reboot test
-
-Reboot again:
-
-```bash
-sudo reboot
-```
-
-Do not manually connect Proton after this reboot.
-
-The purpose of this reboot is to prove unattended operation.
-
-After the system is back, verify:
-
-```bash
-echo '=== CORE SERVICES ==='
-
-for s in \
-    NetworkManager.service \
-    NetworkManager-wait-online.service \
-    nftables.service \
-    dnsmasq.service \
-    lightdm.service \
-    proton-keyring-init.service
-do
-    printf '%-38s enabled=%-10s active=%s\n' \
-        "$s" \
-        "$(systemctl is-enabled "$s" 2>/dev/null || true)" \
-        "$(systemctl is-active "$s" 2>/dev/null || true)"
+    sleep 3
 done
 ```
 
-`NetworkManager-wait-online`, nftables, dnsmasq, LightDM, and the keyring initializer should not be failed.
-
-Check the Proton user service:
-
-```bash
-systemctl --user is-enabled \
-    protonvpn-autoconnect.service
-```
-
-Expected:
-
-```text
-enabled
-```
-
-Check the router web service:
-
-```bash
-systemctl --user is-enabled \
-    proton-router-web.service
-
-systemctl --user is-active \
-    proton-router-web.service
-```
-
-Expected:
-
-```text
-enabled
-active
-```
-
-Because the Python service can require a short moment to bind port 8080 after user login, wait briefly before testing it:
-
-```bash
-sleep 2
-```
-
-Test the local web API:
-
-```bash
-python3 - <<'PY'
-import json
-import urllib.request
-
-with urllib.request.urlopen(
-    "http://127.0.0.1:8080/api/status",
-    timeout=5,
-) as response:
-    payload = json.load(response)
-    print(
-        "web-api=OK"
-        if payload.get("ok")
-        else payload
-    )
-PY
-```
-
-Expected:
-
-```text
-web-api=OK
-```
-
-Check Proton:
+Verify:
 
 ```bash
 protonvpn status
@@ -1339,86 +548,124 @@ Expected:
 Status: Connected
 ```
 
-Check Wi-Fi:
+Enforce the result:
 
 ```bash
-nmcli radio wifi
+protonvpn status 2>/dev/null |
+    grep -q '^Status: Connected' ||
+    {
+        echo "FAIL: Proton did not autoconnect within 3 minutes"
+        exit 1
+    }
 ```
 
-Expected:
+---
 
-```text
-disabled
-```
+## 14. Run the canonical final verification
 
-Check forwarding:
+Enter the release directory:
 
 ```bash
-sysctl net.ipv4.ip_forward
+cd ~/proton-router-v0.0.0
 ```
 
-Expected:
-
-```text
-net.ipv4.ip_forward = 1
-```
-
-Check local DNS:
+Run exactly the same final verification phase used by the automated installer:
 
 ```bash
-grep '^nameserver' /etc/resolv.conf
+./setup \
+    --live \
+    --allow-live-install \
+    --phase final-verify \
+    --non-interactive
 ```
 
-Expected:
+Installation is not considered complete unless this command succeeds and prints:
 
 ```text
-nameserver 127.0.0.1
+FINAL VERIFICATION PASSED
 ```
 
-Check the bypass policy rule:
+If this phase fails, preserve its output and diagnose the failed gate instead of manually forcing the router into service.
 
-```bash
-ip -4 rule show |
-    grep '10000:'
-```
+---
 
-With the default configuration it should refer to:
+## 15. Installation complete
+
+At this point the Linux manual installation has followed the same Raspberry Pi phase order and reboot boundaries used by `Program.cs`:
 
 ```text
-fwmark 0x50564250
-lookup 200
+pre-reboot
+    |
+    +-- optional Wi-Fi -> LAN management handoff
+    |
+pre-reboot-resume
+    |
+    v
+first reboot
+    |
+    v
+post-reboot
+    |
+    v
+LAN DHCP promotion / client lease refresh
+    |
+    v
+final unattended reboot
+    |
+    v
+wait for unattended Proton
+    |
+    v
+final-verify
 ```
 
-Check the bypass routing table:
+The router should now be administered through the LAN.
 
-```bash
-ip -4 route show table 200
-```
-
-It should contain:
-
-- the LAN connected route
-- the current WAN connected route when WAN is available
-- the current WAN default gateway when WAN is available
-- a blackhole default route for fail-closed behavior
-
-From another LAN client, open:
-
-```text
-http://<LAN_ADDR>:8080/
-```
-
-With the default configuration:
+With the default LAN configuration, the web interface is available at:
 
 ```text
 http://192.168.50.1:8080/
 ```
 
-Verify that Proton and client state are visible after unattended boot.
+Do not replace the phase-based installation procedure with individually copied package, NetworkManager, nftables, dnsmasq, keyring, Proton, or systemd commands. Those implementation details belong to the `setup` script so that the Windows installer and Linux manual procedure cannot silently drift apart.
 
 ---
 
-## 25. Verify generated configuration
+## 16. Optional detailed verification
+
+The canonical installation success gate is:
+
+```bash
+cd ~/proton-router-v0.0.0
+
+./setup \
+    --live \
+    --allow-live-install \
+    --phase final-verify \
+    --non-interactive
+```
+
+A successful installation must print:
+
+```text
+FINAL VERIFICATION PASSED
+```
+
+The checks below are additional diagnostics and inspection commands. They do not replace the canonical `final-verify` phase.
+
+Verify that the deferred VPN endpoint refresh timer is installed and enabled:
+
+```bash
+systemctl is-enabled proton-router-vpn-refresh.timer
+```
+
+Expected:
+
+```text
+enabled
+```
+
+The endpoint database itself is intentionally not required to exist during installation. It is built later by the scheduled timer or by an explicit manual/web refresh.
 
 Check LightDM:
 
@@ -1510,7 +757,7 @@ Expected:
 
 ---
 
-## 26. Connect the downstream access point
+## 17. Connect the downstream access point
 
 Connect:
 
@@ -1549,7 +796,7 @@ DNS:     192.168.50.1
 
 ---
 
-## 27. Add optional raw-WAN bypass devices
+## 18. Add optional raw-WAN bypass devices
 
 No real bypass devices are included in Git.
 
@@ -1589,7 +836,7 @@ The web UI only allows bypass mutations for MAC/IP pairs already known to the ro
 
 ---
 
-## 28. Reproducibility success criteria
+## 19. Reproducibility success criteria
 
 A fresh build is considered successful when all of the following are true:
 
@@ -1619,6 +866,9 @@ A fresh build is considered successful when all of the following are true:
 - the web service is unreachable from the WAN.
 - the generated sudoers policy grants the router user only the Proton bootstrap commands and the two required `proton-bypass` mutation forms.
 - no credentials, private keys, real keyring files, or real bypass-device identities are present in the Git repository.
+- `proton-router-vpn-refresh.timer` is installed and enabled.
+- installation does not require an initial dynamic VPN endpoint database build to complete successfully.
+- the dynamic VPN endpoint database can be built later by the scheduled timer or by an explicit manual/web refresh.
 
 If any one of these fails during a clean-room build, record the failing step before modifying the procedure.
 
@@ -1632,7 +882,7 @@ That failure identifies either:
 
 ---
 
-## 29. Files that must never be copied from an existing router
+## 20. Files that must never be copied from an existing router
 
 Do not use an existing configured router as a source for these files:
 
@@ -1653,11 +903,13 @@ Also do not copy machine-generated files from an existing router:
 /etc/systemd/system/proton-keyring-init.service
 ```
 
-Those files must be recreated on the new router by:
+Those files are recreated by `proton-router-apply-conf`, which the canonical `setup` phases invoke as part of installation. For manual recovery or diagnostics, the underlying command is:
 
 ```bash
 sudo proton-router-apply-conf
 ```
+
+Do not substitute that one command for the phase-based installation procedure.
 
 This distinction is central to the reproducibility model:
 
