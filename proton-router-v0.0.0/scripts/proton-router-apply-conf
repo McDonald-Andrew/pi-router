@@ -207,16 +207,16 @@ validate_config() {
     if [ "$MODE" = "apply" ]; then
         /usr/sbin/ip link show dev "$LAN_IF" >/dev/null 2>&1 ||
             die "LAN interface does not exist: $LAN_IF"
-    
+
         /usr/sbin/ip link show dev "$WAN_IF" >/dev/null 2>&1 ||
             die "WAN interface does not exist: $WAN_IF"
-    
+
         LAN_PROFILE=$(
             /usr/bin/nmcli -g GENERAL.CONNECTION \
                 device show "$LAN_IF" |
             head -n 1
         )
-    
+
         [ -n "$LAN_PROFILE" ] && [ "$LAN_PROFILE" != "--" ] ||
             die "no active NetworkManager connection on $LAN_IF"
     fi
@@ -339,7 +339,7 @@ restore_lan_profile() {
 
 backup_generated_files() {
     WORK_DIR=$(mktemp -d /run/proton-router-apply-conf.XXXXXX)
-    backup_lan_profile 
+    backup_lan_profile
 
     NFT_OLD=0
     DNS_OLD=0
@@ -506,7 +506,7 @@ generate_sudoers_conf() {
 # Edit $CANONICAL_CONFIG_FILE, not this file.
 
 Cmnd_Alias PROTONVPN_BOOTSTRAP = /usr/sbin/nft flush chain inet router_filter host_wan_bootstrap, /usr/sbin/nft add rule inet router_filter host_wan_bootstrap accept
-Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *
+Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *, /usr/bin/systemctl --no-block start proton-router-vpn-refresh.service
 $ROUTER_USER ALL=(root) NOPASSWD: PROTONVPN_BOOTSTRAP, PROTONROUTER_WEB
 EOF_SUDOERS
 
