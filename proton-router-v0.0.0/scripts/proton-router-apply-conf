@@ -1,0 +1,650 @@
+#!/bin/sh
+set -eu
+
+CANONICAL_CONFIG_FILE="/etc/proton-router.conf"
+
+TARGET_ROOT="/"
+MODE="apply"
+
+CONFIG_FILE=""
+NFT_VARS_DIR=""
+NFT_VARS_FILE=""
+DNSMASQ_DIR=""
+DNSMASQ_GENERATED_FILE=""
+LIGHTDM_DIR=""
+LIGHTDM_GENERATED_FILE=""
+POLKIT_DIR=""
+POLKIT_GENERATED_FILE=""
+SUDOERS_DIR=""
+SUDOERS_GENERATED_FILE=""
+SYSTEMD_DIR=""
+KEYRING_SERVICE_FILE=""
+
+die() {
+    echo "proton-router-apply-conf: $*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<'EOF_USAGE'
+Usage:
+  proton-router-apply-conf
+  proton-router-apply-conf --root DIR --generate-only
+
+Modes:
+  no arguments
+      Apply the router configuration to the live system.
+
+  --root DIR --generate-only
+      Generate machine-specific configuration beneath DIR without
+      modifying live NetworkManager, dnsmasq, nftables, bypass routing,
+      or systemd state.
+
+  -h, --help
+      Show this help.
+EOF_USAGE
+}
+
+root_path() {
+    case "$1" in
+        /*)
+            ;;
+        *)
+            die "root_path requires an absolute path: $1"
+            ;;
+    esac
+
+    if [ "$TARGET_ROOT" = "/" ]; then
+        printf '%s\n' "$1"
+    else
+        printf '%s%s\n' "${TARGET_ROOT%/}" "$1"
+    fi
+}
+
+configure_paths() {
+    CONFIG_FILE=$(root_path "$CANONICAL_CONFIG_FILE")
+
+    NFT_VARS_DIR=$(root_path "/etc/nftables.d")
+    NFT_VARS_FILE="$NFT_VARS_DIR/generated-vars.nft"
+
+    DNSMASQ_DIR=$(root_path "/etc/dnsmasq.d")
+    DNSMASQ_GENERATED_FILE="$DNSMASQ_DIR/generated-vars.conf"
+
+    LIGHTDM_DIR=$(root_path "/etc/lightdm/lightdm.conf.d")
+    LIGHTDM_GENERATED_FILE="$LIGHTDM_DIR/90-proton-router-autologin.conf"
+
+    POLKIT_DIR=$(root_path "/etc/polkit-1/rules.d")
+    POLKIT_GENERATED_FILE="$POLKIT_DIR/49-protonvpn-networkmanager.rules"
+
+    SUDOERS_DIR=$(root_path "/etc/sudoers.d")
+    SUDOERS_GENERATED_FILE="$SUDOERS_DIR/protonvpn-bootstrap"
+
+    SYSTEMD_DIR=$(root_path "/etc/systemd/system")
+    KEYRING_SERVICE_FILE="$SYSTEMD_DIR/proton-keyring-init.service"
+}
+
+parse_args() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --root)
+                [ "$#" -ge 2 ] ||
+                    die "--root requires a directory"
+
+                TARGET_ROOT="$2"
+                shift 2
+                ;;
+
+            --generate-only)
+                MODE="generate-only"
+                shift
+                ;;
+
+            -h|--help)
+                usage
+                exit 0
+                ;;
+
+            *)
+                die "unknown argument: $1"
+                ;;
+        esac
+    done
+
+    case "$TARGET_ROOT" in
+        /*)
+            ;;
+        *)
+            die "--root must be an absolute path"
+            ;;
+    esac
+
+    [ -d "$TARGET_ROOT" ] ||
+        die "target root does not exist: $TARGET_ROOT"
+
+    if [ "$MODE" = "generate-only" ]; then
+        [ "$TARGET_ROOT" != "/" ] ||
+            die "--generate-only requires a non-live --root directory"
+    elif [ "$TARGET_ROOT" != "/" ]; then
+        die "--root is only valid with --generate-only"
+    fi
+}
+
+require_root() {
+    [ "$(id -u)" -eq 0 ] || die "run this command with sudo"
+}
+
+load_config() {
+    [ -r "$CONFIG_FILE" ] ||
+        die "configuration file not found: $CONFIG_FILE"
+
+    . "$CONFIG_FILE"
+
+    [ -n "${ROUTER_USER:-}" ] ||
+        die "ROUTER_USER is not set in $CONFIG_FILE"
+
+    [ -n "${ROUTER_SESSION:-}" ] ||
+        die "ROUTER_SESSION is not set in $CONFIG_FILE"
+
+    [ -n "${LAN_IF:-}" ] ||
+        die "LAN_IF is not set in $CONFIG_FILE"
+
+    [ -n "${WAN_IF:-}" ] ||
+        die "WAN_IF is not set in $CONFIG_FILE"
+
+    [ -n "${LAN_ADDR:-}" ] ||
+        die "LAN_ADDR is not set in $CONFIG_FILE"
+
+    [ -n "${LAN_PREFIX:-}" ] ||
+        die "LAN_PREFIX is not set in $CONFIG_FILE"
+
+    [ -n "${DHCP_START:-}" ] ||
+        die "DHCP_START is not set in $CONFIG_FILE"
+
+    [ -n "${DHCP_END:-}" ] ||
+        die "DHCP_END is not set in $CONFIG_FILE"
+
+    [ -n "${DHCP_LEASE:-}" ] ||
+        die "DHCP_LEASE is not set in $CONFIG_FILE"
+
+    [ -n "${DNS_UPSTREAM:-}" ] ||
+        die "DNS_UPSTREAM is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_MARK:-}" ] ||
+        die "BYPASS_MARK is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_TABLE:-}" ] ||
+        die "BYPASS_TABLE is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_RULE_PRIORITY:-}" ] ||
+        die "BYPASS_RULE_PRIORITY is not set in $CONFIG_FILE"
+}
+
+validate_config() {
+    printf '%s\n' "$ROUTER_USER" |
+        grep -Eq '^[a-z_][a-z0-9_-]*$' ||
+        die "invalid ROUTER_USER: $ROUTER_USER"
+
+    /usr/bin/id "$ROUTER_USER" >/dev/null 2>&1 ||
+        die "router user does not exist: $ROUTER_USER"
+
+    ROUTER_HOME=$(
+        /usr/bin/getent passwd "$ROUTER_USER" |
+        awk -F: 'NR == 1 { print $6 }'
+    )
+
+    [ -n "$ROUTER_HOME" ] ||
+        die "could not determine home directory for $ROUTER_USER"
+
+    [ -d "$ROUTER_HOME" ] ||
+        die "router user home does not exist: $ROUTER_HOME"
+
+    if [ ! -e "/usr/share/wayland-sessions/$ROUTER_SESSION.desktop" ] &&
+       [ ! -e "/usr/share/xsessions/$ROUTER_SESSION.desktop" ]
+    then
+        die "desktop session does not exist: $ROUTER_SESSION"
+    fi
+
+    if [ "$MODE" = "apply" ]; then
+        /usr/sbin/ip link show dev "$LAN_IF" >/dev/null 2>&1 ||
+            die "LAN interface does not exist: $LAN_IF"
+    
+        /usr/sbin/ip link show dev "$WAN_IF" >/dev/null 2>&1 ||
+            die "WAN interface does not exist: $WAN_IF"
+    
+        LAN_PROFILE=$(
+            /usr/bin/nmcli -g GENERAL.CONNECTION \
+                device show "$LAN_IF" |
+            head -n 1
+        )
+    
+        [ -n "$LAN_PROFILE" ] && [ "$LAN_PROFILE" != "--" ] ||
+            die "no active NetworkManager connection on $LAN_IF"
+    fi
+
+    # Validate the desired LAN and DHCP range independently of the
+    # currently-active LAN address.
+    /usr/bin/python3 - \
+        "$LAN_ADDR" \
+        "$LAN_PREFIX" \
+        "$DHCP_START" \
+        "$DHCP_END" <<'EOF_PY'
+import ipaddress
+import sys
+
+lan_addr, prefix, dhcp_start, dhcp_end = sys.argv[1:]
+
+try:
+    lan = ipaddress.IPv4Interface(f"{lan_addr}/{prefix}")
+    start = ipaddress.IPv4Address(dhcp_start)
+    end = ipaddress.IPv4Address(dhcp_end)
+except ValueError as exc:
+    print(f"proton-router-apply-conf: invalid LAN/DHCP configuration: {exc}",
+          file=sys.stderr)
+    sys.exit(1)
+
+network = lan.network
+
+if lan.ip in (network.network_address, network.broadcast_address):
+    print("proton-router-apply-conf: LAN_ADDR cannot be the network or broadcast address",
+          file=sys.stderr)
+    sys.exit(1)
+
+for name, address in (("DHCP_START", start), ("DHCP_END", end)):
+    if address not in network:
+        print(f"proton-router-apply-conf: {name} is outside {network}",
+              file=sys.stderr)
+        sys.exit(1)
+
+    if address in (network.network_address, network.broadcast_address):
+        print(f"proton-router-apply-conf: {name} cannot be the network or broadcast address",
+              file=sys.stderr)
+        sys.exit(1)
+
+if int(start) > int(end):
+    print("proton-router-apply-conf: DHCP_START must not be greater than DHCP_END",
+          file=sys.stderr)
+    sys.exit(1)
+
+if int(start) <= int(lan.ip) <= int(end):
+    print("proton-router-apply-conf: LAN_ADDR must not be inside the DHCP pool",
+          file=sys.stderr)
+    sys.exit(1)
+EOF_PY
+
+    printf '%s\n' "$BYPASS_MARK" |
+        grep -Eq '^0x[0-9a-fA-F]+$' ||
+        die "invalid BYPASS_MARK: $BYPASS_MARK"
+
+    case "$BYPASS_TABLE" in
+        ''|*[!0-9]*)
+            die "invalid BYPASS_TABLE: $BYPASS_TABLE"
+            ;;
+    esac
+
+    case "$BYPASS_RULE_PRIORITY" in
+        ''|*[!0-9]*)
+            die "invalid BYPASS_RULE_PRIORITY: $BYPASS_RULE_PRIORITY"
+            ;;
+    esac
+}
+
+backup_lan_profile() {
+    LAN_OLD_METHOD=$(
+        /usr/bin/nmcli -g ipv4.method connection show "$LAN_PROFILE"
+    )
+
+    LAN_OLD_ADDRESSES=$(
+        /usr/bin/nmcli -g ipv4.addresses connection show "$LAN_PROFILE" |
+        /usr/bin/paste -sd, -
+    )
+
+    LAN_OLD_GATEWAY=$(
+        /usr/bin/nmcli -g ipv4.gateway connection show "$LAN_PROFILE"
+    )
+
+    LAN_OLD_NEVER_DEFAULT=$(
+        /usr/bin/nmcli -g ipv4.never-default connection show "$LAN_PROFILE"
+    )
+
+    LAN_OLD_IPV6_METHOD=$(
+        /usr/bin/nmcli -g ipv6.method connection show "$LAN_PROFILE"
+    )
+}
+
+apply_lan_profile() {
+    /usr/bin/nmcli connection modify "$LAN_PROFILE" \
+        ipv4.method manual \
+        ipv4.addresses "$LAN_ADDR/$LAN_PREFIX" \
+        ipv4.gateway "" \
+        ipv4.never-default yes \
+        ipv6.method disabled
+
+    /usr/bin/nmcli device reapply "$LAN_IF"
+}
+
+restore_lan_profile() {
+    /usr/bin/nmcli connection modify "$LAN_PROFILE" \
+        ipv4.method "$LAN_OLD_METHOD" \
+        ipv4.addresses "$LAN_OLD_ADDRESSES" \
+        ipv4.gateway "$LAN_OLD_GATEWAY" \
+        ipv4.never-default "$LAN_OLD_NEVER_DEFAULT" \
+        ipv6.method "$LAN_OLD_IPV6_METHOD" \
+        >/dev/null 2>&1 || return 1
+
+    /usr/bin/nmcli device reapply "$LAN_IF" \
+        >/dev/null 2>&1 ||
+    /usr/bin/nmcli connection up "$LAN_PROFILE" ifname "$LAN_IF" \
+        >/dev/null 2>&1
+}
+
+backup_generated_files() {
+    WORK_DIR=$(mktemp -d /run/proton-router-apply-conf.XXXXXX)
+    backup_lan_profile 
+
+    NFT_OLD=0
+    DNS_OLD=0
+
+    LIGHTDM_OLD=0
+    POLKIT_OLD=0
+    SUDOERS_OLD=0
+    KEYRING_SERVICE_OLD=0
+
+    if [ -e "$NFT_VARS_FILE" ]; then
+        cp -a "$NFT_VARS_FILE" "$WORK_DIR/nft-old"
+        NFT_OLD=1
+    fi
+
+    if [ -e "$DNSMASQ_GENERATED_FILE" ]; then
+        cp -a "$DNSMASQ_GENERATED_FILE" "$WORK_DIR/dnsmasq-old"
+        DNS_OLD=1
+    fi
+
+    if [ -e "$LIGHTDM_GENERATED_FILE" ]; then
+        cp -a "$LIGHTDM_GENERATED_FILE" "$WORK_DIR/lightdm-old"
+        LIGHTDM_OLD=1
+    fi
+
+    if [ -e "$POLKIT_GENERATED_FILE" ]; then
+        cp -a "$POLKIT_GENERATED_FILE" "$WORK_DIR/polkit-old"
+        POLKIT_OLD=1
+    fi
+
+    if [ -e "$SUDOERS_GENERATED_FILE" ]; then
+        cp -a "$SUDOERS_GENERATED_FILE" "$WORK_DIR/sudoers-old"
+        SUDOERS_OLD=1
+    fi
+
+    if [ -e "$KEYRING_SERVICE_FILE" ]; then
+        cp -a "$KEYRING_SERVICE_FILE" "$WORK_DIR/keyring-service-old"
+        KEYRING_SERVICE_OLD=1
+    fi
+}
+
+restore_generated_files() {
+    if [ "$NFT_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/nft-old" "$NFT_VARS_FILE"
+    else
+        rm -f "$NFT_VARS_FILE"
+    fi
+
+    if [ "$DNS_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/dnsmasq-old" "$DNSMASQ_GENERATED_FILE"
+    else
+        rm -f "$DNSMASQ_GENERATED_FILE"
+    fi
+
+    if [ "$LIGHTDM_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/lightdm-old" "$LIGHTDM_GENERATED_FILE"
+    else
+        rm -f "$LIGHTDM_GENERATED_FILE"
+    fi
+
+    if [ "$POLKIT_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/polkit-old" "$POLKIT_GENERATED_FILE"
+    else
+        rm -f "$POLKIT_GENERATED_FILE"
+    fi
+
+    if [ "$SUDOERS_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/sudoers-old" "$SUDOERS_GENERATED_FILE"
+    else
+        rm -f "$SUDOERS_GENERATED_FILE"
+    fi
+
+    if [ "$KEYRING_SERVICE_OLD" -eq 1 ]; then
+        cp -a "$WORK_DIR/keyring-service-old" "$KEYRING_SERVICE_FILE"
+    else
+        rm -f "$KEYRING_SERVICE_FILE"
+    fi
+}
+
+cleanup() {
+    [ -z "${WORK_DIR:-}" ] || rm -rf "$WORK_DIR"
+}
+
+generate_nft_vars() {
+    install -d -m 0755 "$NFT_VARS_DIR"
+
+    tmp="$WORK_DIR/nft-new"
+
+    cat > "$tmp" <<EOF_NFT
+# Generated by proton-router-apply-conf.
+# Edit $CANONICAL_CONFIG_FILE, not this file.
+
+define LAN_IF = "$LAN_IF"
+define WAN_IF = "$WAN_IF"
+define BYPASS_MARK = $BYPASS_MARK
+EOF_NFT
+
+    install -m 0644 "$tmp" "$NFT_VARS_FILE"
+}
+
+generate_dnsmasq_conf() {
+    tmp="$WORK_DIR/dnsmasq-new"
+
+    cat > "$tmp" <<EOF_DNSMASQ
+# Generated by proton-router-apply-conf.
+# Edit $CANONICAL_CONFIG_FILE, not this file.
+
+# LAN interface
+interface=$LAN_IF
+
+# DHCP pool
+dhcp-range=$DHCP_START,$DHCP_END,$DHCP_LEASE
+
+# Cloudflare Families upstream DNS
+server=$DNS_UPSTREAM
+EOF_DNSMASQ
+
+    install -m 0644 "$tmp" "$DNSMASQ_GENERATED_FILE"
+}
+
+generate_lightdm_conf() {
+    install -d -m 0755 "$LIGHTDM_DIR"
+
+    tmp="$WORK_DIR/lightdm-new"
+
+    cat > "$tmp" <<EOF_LIGHTDM
+# Generated by proton-router-apply-conf.
+# Edit $CANONICAL_CONFIG_FILE, not this file.
+
+[Seat:*]
+autologin-user=$ROUTER_USER
+autologin-session=$ROUTER_SESSION
+EOF_LIGHTDM
+
+    install -m 0644 "$tmp" "$LIGHTDM_GENERATED_FILE"
+}
+
+generate_polkit_conf() {
+    install -d -m 0755 "$POLKIT_DIR"
+
+    tmp="$WORK_DIR/polkit-new"
+
+    cat > "$tmp" <<EOF_POLKIT
+// Generated by proton-router-apply-conf.
+// Edit $CANONICAL_CONFIG_FILE, not this file.
+
+polkit.addRule(function(action, subject) {
+    if (subject.user == "$ROUTER_USER" &&
+        (action.id == "org.freedesktop.NetworkManager.settings.modify.system" ||
+         action.id == "org.freedesktop.NetworkManager.settings.modify.own" ||
+         action.id == "org.freedesktop.NetworkManager.network-control")) {
+        return polkit.Result.YES;
+    }
+});
+EOF_POLKIT
+
+    install -m 0644 "$tmp" "$POLKIT_GENERATED_FILE"
+}
+
+generate_sudoers_conf() {
+    tmp="$WORK_DIR/sudoers-new"
+
+    cat > "$tmp" <<EOF_SUDOERS
+# Generated by proton-router-apply-conf.
+# Edit $CANONICAL_CONFIG_FILE, not this file.
+
+Cmnd_Alias PROTONVPN_BOOTSTRAP = /usr/sbin/nft flush chain inet router_filter host_wan_bootstrap, /usr/sbin/nft add rule inet router_filter host_wan_bootstrap accept
+Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *
+$ROUTER_USER ALL=(root) NOPASSWD: PROTONVPN_BOOTSTRAP, PROTONROUTER_WEB
+EOF_SUDOERS
+
+    chmod 0440 "$tmp"
+
+    /usr/sbin/visudo -cf "$tmp" >/dev/null ||
+        die "generated sudoers configuration failed validation"
+
+    install -m 0440 "$tmp" "$SUDOERS_GENERATED_FILE"
+}
+
+generate_keyring_service() {
+  tmp="$WORK_DIR/proton-keyring-init.service"
+
+  cat > "$tmp" <<EOF_KEYRING_SERVICE
+# Generated by proton-router-apply-conf.
+# Edit $CANONICAL_CONFIG_FILE, not this file.
+
+[Unit]
+Description=Initialize empty-password GNOME login keyring for Proton VPN
+Before=display-manager.service
+Wants=dbus.socket
+
+[Service]
+Type=oneshot
+User=$ROUTER_USER
+Environment=HOME=$ROUTER_HOME
+ExecStart=/usr/local/sbin/proton-keyring-init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=graphical.target
+EOF_KEYRING_SERVICE
+
+    /usr/bin/systemd-analyze verify "$tmp" >/dev/null ||
+        die "generated proton-keyring-init service failed validation"
+
+    install -m 0644 "$tmp" "$KEYRING_SERVICE_FILE"
+}
+
+generate_only_configuration() {
+    WORK_DIR=$(mktemp -d /tmp/proton-router-apply-conf.XXXXXX)
+    trap cleanup EXIT HUP INT TERM
+
+    install -d -m 0755         "$NFT_VARS_DIR"         "$DNSMASQ_DIR"         "$LIGHTDM_DIR"         "$POLKIT_DIR"         "$SUDOERS_DIR"         "$SYSTEMD_DIR"
+
+    generate_nft_vars
+    generate_dnsmasq_conf
+    generate_lightdm_conf
+    generate_polkit_conf
+    generate_sudoers_conf
+    generate_keyring_service
+
+    echo "proton-router configuration generated"
+}
+
+rollback_live_configuration() {
+    echo "proton-router-apply-conf: rolling back to previous configuration" >&2
+
+    restore_generated_files
+    /usr/bin/systemctl daemon-reload >/dev/null 2>&1 || true
+    restore_lan_profile || true
+
+    /usr/sbin/nft -f /etc/nftables.conf >/dev/null 2>&1 || true
+    /usr/local/sbin/proton-bypass sync >/dev/null 2>&1 || true
+    /usr/bin/systemctl restart dnsmasq >/dev/null 2>&1 || true
+}
+
+apply_configuration() {
+    backup_generated_files
+    trap cleanup EXIT HUP INT TERM
+
+    generate_nft_vars
+    generate_dnsmasq_conf
+    generate_lightdm_conf
+    generate_polkit_conf
+    generate_sudoers_conf
+    generate_keyring_service
+
+    if ! /usr/sbin/nft -c -f /etc/nftables.conf; then
+        restore_generated_files
+        die "nftables syntax check failed; previous configuration restored"
+    fi
+
+    if ! /usr/sbin/dnsmasq --test; then
+        restore_generated_files
+        die "dnsmasq syntax check failed; previous configuration restored"
+    fi
+
+    if ! apply_lan_profile; then
+        restore_generated_files
+        restore_lan_profile >/dev/null 2>&1 || true
+        die "NetworkManager LAN configuration failed; previous configuration restored"
+    fi
+
+    # Apply DNS first. If it fails, the live firewall has not been touched.
+    if ! /usr/bin/systemctl restart dnsmasq; then
+        rollback_live_configuration
+        die "dnsmasq restart failed; previous configuration restored"
+    fi
+
+    # Apply the firewall, then immediately restore the dynamic bypass set
+    # and policy-routing table that are not stored directly in nftables.conf.
+    if ! /usr/sbin/nft -f /etc/nftables.conf; then
+        rollback_live_configuration
+        die "nftables reload failed; previous configuration restored"
+    fi
+
+    if ! /usr/local/sbin/proton-bypass sync; then
+        rollback_live_configuration
+        die "proton-bypass synchronization failed; previous configuration restored"
+    fi
+
+    /usr/bin/systemctl daemon-reload
+
+    /usr/bin/systemctl enable proton-keyring-init.service \
+        >/dev/null 2>&1 ||
+        die "failed to enable proton-keyring-init.service"
+
+    echo "proton-router configuration applied"
+}
+
+parse_args "$@"
+configure_paths
+require_root
+load_config
+validate_config
+
+case "$MODE" in
+    generate-only)
+        generate_only_configuration
+        ;;
+
+    apply)
+        apply_configuration
+        ;;
+
+    *)
+        die "internal error: unknown mode: $MODE"
+        ;;
+esac

@@ -1,0 +1,363 @@
+#!/bin/sh
+set -eu
+
+# proton-bypass
+# Permanently assigns selected LAN devices to the raw WAN instead of Proton.
+# DNS/firewall enforcement remains handled by the Pi.
+
+CONFIG_FILE="/etc/proton-router.conf"
+
+STATE_DIR="/etc/proton-bypass"
+DEVICES_FILE="$STATE_DIR/devices.conf"
+
+NFT_FAMILY="inet"
+NFT_TABLE="router_filter"
+NFT_SET="proton_bypass_devices"
+
+die() {
+    echo "proton-bypass: $*" >&2
+    exit 1
+}
+
+usage() {
+    cat <<EOF_USAGE
+Usage:
+  proton-bypass add <MAC> <IPv4>
+  proton-bypass remove <MAC> <IPv4>
+  proton-bypass list
+  proton-bypass sync
+EOF_USAGE
+}
+
+require_root() {
+    [ "$(id -u)" -eq 0 ] || die "run this command with sudo"
+}
+
+load_config() {
+    [ -r "$CONFIG_FILE" ] ||
+        die "configuration file not found: $CONFIG_FILE"
+
+    . "$CONFIG_FILE"
+
+    [ -n "${LAN_IF:-}" ] ||
+        die "LAN_IF is not set in $CONFIG_FILE"
+
+    [ -n "${WAN_IF:-}" ] ||
+        die "WAN_IF is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_MARK:-}" ] ||
+        die "BYPASS_MARK is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_TABLE:-}" ] ||
+        die "BYPASS_TABLE is not set in $CONFIG_FILE"
+
+    [ -n "${BYPASS_RULE_PRIORITY:-}" ] ||
+        die "BYPASS_RULE_PRIORITY is not set in $CONFIG_FILE"
+}
+
+normalize_mac() {
+    printf '%s\n' "$1" |
+        tr '[:upper:]' '[:lower:]' |
+        tr '-' ':'
+}
+
+valid_mac() {
+    printf '%s\n' "$1" |
+        grep -Eq '^([0-9a-f]{2}:){5}[0-9a-f]{2}$'
+}
+
+valid_ip() {
+    candidate=$1
+
+    route=$(
+        /usr/sbin/ip -4 route get "$candidate" 2>/dev/null |
+        head -n 1
+    ) || return 1
+
+    case "$route" in
+        local\ *|broadcast\ *|unreachable\ *|blackhole\ *|prohibit\ *)
+            return 1
+            ;;
+    esac
+
+    printf '%s\n' "$route" |
+        grep -Eq "(^| )dev $LAN_IF( |$)"
+}
+
+discover_lan() {
+    LAN_RUNTIME_ADDR=$(
+        /usr/sbin/ip -4 -o addr show dev "$LAN_IF" scope global |
+        awk 'NR == 1 { split($4,a,"/"); print a[1] }'
+    )
+
+    LAN_RUNTIME_NET=$(
+        /usr/sbin/ip -4 route show dev "$LAN_IF" scope link |
+        awk '$1 ~ /\// { print $1; exit }'
+    )
+}
+
+ensure_state() {
+    install -d -m 0755 "$STATE_DIR"
+
+    if [ ! -e "$DEVICES_FILE" ]; then
+        cat > "$DEVICES_FILE" <<EOF_DEVICES
+# Managed by proton-bypass.
+# Format: MAC,IPv4,lease-time
+EOF_DEVICES
+        chmod 0644 "$DEVICES_FILE"
+    fi
+}
+
+require_nft_base() {
+    /usr/sbin/nft list set \
+        "$NFT_FAMILY" "$NFT_TABLE" "$NFT_SET" \
+        >/dev/null 2>&1 ||
+        die "nftables proton-bypass base configuration is not installed"
+}
+
+ensure_policy_rule() {
+    existing=$(
+        /usr/sbin/ip -4 rule show |
+        awk -v p="$BYPASS_RULE_PRIORITY" '$1 == p ":" { print; exit }'
+    )
+
+    if [ -n "$existing" ]; then
+        printf '%s\n' "$existing" |
+            grep -q "fwmark $BYPASS_MARK.*lookup $BYPASS_TABLE" ||
+            die "IP rule priority $BYPASS_RULE_PRIORITY is already in use"
+        return
+    fi
+
+    /usr/sbin/ip rule add \
+        priority "$BYPASS_RULE_PRIORITY" \
+        fwmark "$BYPASS_MARK" \
+        lookup "$BYPASS_TABLE"
+}
+
+sync_set() {
+    require_nft_base
+
+    /usr/sbin/nft flush set \
+        "$NFT_FAMILY" "$NFT_TABLE" "$NFT_SET"
+
+    while IFS=, read -r pb_mac pb_ip pb_lease; do
+        case "$pb_mac" in
+            ''|\#*) continue ;;
+        esac
+
+        /usr/sbin/nft \
+            "add element $NFT_FAMILY $NFT_TABLE $NFT_SET { $pb_mac . $pb_ip }"
+    done < "$DEVICES_FILE"
+}
+
+failclosed_routes() {
+    /usr/sbin/ip route flush table "$BYPASS_TABLE" 2>/dev/null || true
+
+    # Always install the fail-closed default first.
+    /usr/sbin/ip route add \
+        blackhole default metric 32767 \
+        table "$BYPASS_TABLE"
+
+    discover_lan
+
+    # If LAN is currently available, learn its real address/network instead of hardcoding it
+    if [ -n "$LAN_RUNTIME_NET" ] && [ -n "$LAN_RUNTIME_ADDR" ]; then
+        /usr/sbin/ip route add \
+            "$LAN_RUNTIME_NET" dev "$LAN_IF" src "$LAN_RUNTIME_ADDR" \
+            table "$BYPASS_TABLE"
+    fi
+
+    ensure_policy_rule
+}
+
+sync_routes() {
+    failclosed_routes
+
+    wan_net=$(
+        /usr/sbin/ip -4 route show dev "$WAN_IF" scope link |
+        awk '$1 ~ /\// { print $1; exit }'
+    )
+
+    wan_ip=$(
+        /usr/sbin/ip -4 -o addr show dev "$WAN_IF" scope global |
+        awk 'NR == 1 { split($4,a,"/"); print a[1] }'
+    )
+
+    wan_gw=$(
+        /usr/sbin/ip -4 route show default dev "$WAN_IF" |
+        awk 'NR == 1 { print $3 }'
+    )
+
+    # No usable WAN yet: leave table 200 fail-closed.
+    [ -n "$wan_net" ] || return 0
+    [ -n "$wan_ip" ]  || return 0
+    [ -n "$wan_gw" ]  || return 0
+
+    /usr/sbin/ip route add \
+        "$wan_net" dev "$WAN_IF" src "$wan_ip" \
+        table "$BYPASS_TABLE"
+
+    /usr/sbin/ip route add \
+        default via "$wan_gw" dev "$WAN_IF" metric 100 \
+        table "$BYPASS_TABLE"
+}
+
+sync_all() {
+    ensure_state
+    sync_set
+    sync_routes
+}
+
+reload_dnsmasq() {
+    if /usr/bin/systemctl is-active --quiet dnsmasq; then
+        /usr/bin/systemctl kill -s HUP dnsmasq
+    fi
+}
+
+add_device() {
+    [ "$#" -eq 2 ] || die "add requires <MAC> <IPv4>"
+
+    mac=$(normalize_mac "$1")
+    ip=$2
+
+    valid_mac "$mac" || die "invalid MAC address: $1"
+    valid_ip "$ip"   || die "IPv4 address is not a usable address on $LAN_IF"
+
+    require_nft_base
+    ensure_state
+
+    existing_ip=$(
+        awk -F, -v m="$mac" '$1 == m { print $2; exit }' "$DEVICES_FILE"
+    )
+
+    if [ -n "$existing_ip" ]; then
+        [ "$existing_ip" = "$ip" ] ||
+            die "$mac is already assigned to $existing_ip"
+
+        echo "$mac $ip is already configured"
+        sync_all
+        return
+    fi
+
+    existing_mac=$(
+        awk -F, -v i="$ip" '$2 == i { print $1; exit }' "$DEVICES_FILE"
+    )
+
+    [ -z "$existing_mac" ] ||
+        die "$ip is already assigned to $existing_mac"
+
+    printf '%s,%s,infinite\n' "$mac" "$ip" >> "$DEVICES_FILE"
+
+    reload_dnsmasq
+    sync_all
+
+    echo "Added: $mac -> $ip"
+}
+
+remove_device() {
+    [ "$#" -eq 2 ] || die "remove requires <MAC> <IPv4>"
+
+    mac=$(normalize_mac "$1")
+    ip=$2
+
+    valid_mac "$mac" || die "invalid MAC address: $1"
+    valid_ip "$ip"   || die "invalid IPv4 address: $ip"
+
+    require_nft_base
+    ensure_state
+
+    line="$mac,$ip,infinite"
+
+    grep -Fqx "$line" "$DEVICES_FILE" ||
+        die "$mac -> $ip is not configured"
+
+    tmp=$(mktemp "$STATE_DIR/devices.conf.XXXXXX")
+
+    grep -Fvx "$line" "$DEVICES_FILE" > "$tmp" || true
+
+    chmod 0644 "$tmp"
+    mv "$tmp" "$DEVICES_FILE"
+
+    reload_dnsmasq
+    sync_all
+
+    echo "Removed: $mac -> $ip"
+}
+
+list_devices() {
+    ensure_state
+
+    printf '%-18s %s\n' "MAC" "IPv4"
+    printf '%-18s %s\n' "-----------------" "---------------"
+
+    awk -F, '
+        $0 !~ /^#/ && NF >= 2 {
+            printf "%-18s %s\n", $1, $2
+        }
+    ' "$DEVICES_FILE"
+}
+
+require_root
+load_config
+
+# NetworkManager dispatcher invocation.
+# Ignore dispatcher events that are not for the WAN interface.
+if [ -n "${NM_DISPATCHER_ACTION:-}" ]; then
+    [ "${1:-}" = "$WAN_IF" ] || exit 0
+
+    case "$NM_DISPATCHER_ACTION" in
+        up|dhcp4-change)
+            sync_all
+            ;;
+        pre-down|down)
+            ensure_state
+            sync_set
+            failclosed_routes
+            ;;
+    esac
+
+    exit 0
+fi
+
+command=${1:-}
+
+case "$command" in
+    add)
+        shift
+        add_device "$@"
+        ;;
+    remove)
+        shift
+        remove_device "$@"
+        ;;
+    list)
+        list_devices
+        ;;
+    sync)
+        #
+        # A base nftables reload recreates the static
+        # router_filter objects but removes the runtime
+        # commercial-VPN endpoint set and rule.
+        #
+        # Restore the validated current endpoint database
+        # first, then restore the device bypass dynamic state.
+        #
+        #
+        # Clean installs have no dynamic VPN endpoint
+        # database until the first refresh succeeds.
+        #
+        if [ -s /var/lib/proton-router/vpn-block/current/status ] \
+            && [ -s /var/lib/proton-router/vpn-block/current/normalized-ipv4.txt ] \
+            && [ -s /var/lib/proton-router/vpn-block/current/normalized-ipv4-cidrs.txt ]
+        then
+            /usr/local/sbin/proton-router-vpn-refresh --restore-only
+        fi
+
+        sync_all
+        echo "proton-bypass synchronized"
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

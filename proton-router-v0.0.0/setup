@@ -1,0 +1,4882 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+SETUP_VERSION="0.20.1"
+
+SCRIPT_DIR="$(
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+    pwd -P
+)"
+
+TARGET_ROOT=""
+PHASE=""
+ANSWERS_FILE=""
+ANSWERS_LOADED=0
+CONFIG_COLLECTED=0
+BYPASS_FILE_INPUT=""
+PCIE_STATE="auto"
+INSTALL_OPTIONAL=0
+NON_INTERACTIVE=0
+PROTON_USERNAME_ARG=""
+ALLOW_LIVE_INSTALL=0
+ALLOW_NETWORK_CUTOVER=0
+ALLOW_WIFI_DISABLE=0
+LIVE_MODE=0
+
+die() {
+    printf 'setup: ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+note() {
+    printf 'setup: %s\n' "$*"
+}
+
+usage() {
+    cat <<'EOF'
+Raspberry Pi 5 Proton Router setup
+
+Usage:
+  ./setup --root DIR --phase PHASE [options]
+  ./setup --live --phase PHASE [options]
+
+Options:
+  --root DIR
+      Build into an alternate filesystem root.
+      Used for safe testing, for example /tmp/proton-router-test.
+
+  --live
+      Target the real system root (/).
+      This option will be used only after staged testing is complete.
+
+  --phase NAME
+      Run one setup phase.
+
+  --answers FILE
+      Load setup values from a shell-style configuration file.
+      /etc/proton-router.conf can be used for staged comparison tests.
+
+  --bypass-file FILE
+      Use an existing private proton-bypass devices file.
+      The file is validated before installation.
+
+  --pcie-state STATE
+      Override PCIe hardware detection for testing.
+      Valid values: auto, present, missing.
+      Normal live installation uses auto.
+
+  --with-optional
+      Also install packages listed in requirements-optional.txt.
+
+  --proton-username USERNAME
+      Proton account username or email address.
+      Optional in interactive mode; if omitted, setup prompts for it.
+      Required in non-interactive Proton provisioning.
+      The Proton password is never accepted by setup.
+
+  --allow-live-install
+      Explicitly permit setup to target the real system root.
+      Required in addition to phase-specific destructive acknowledgements.
+
+  --allow-network-cutover
+      Explicitly permit live LAN/WAN activation.
+      This can change addresses and interrupt SSH connectivity.
+
+  --allow-wifi-disable
+      Explicitly permit live Wi-Fi shutdown.
+      If running over SSH, setup requires the SSH path to use LAN_IF.
+
+  --non-interactive
+      Do not prompt. Use values from --answers or tested defaults.
+
+  -h, --help
+      Show this help.
+
+Currently implemented phases:
+  config
+  files
+  bypass
+  boot
+  platform
+  repository
+  packages
+  network
+  lightdm
+  keyring
+  apply
+  services
+  proton
+  cutover
+  wifi
+  boot-services
+  managed-connect
+  pre-reboot
+  post-reboot
+  final-verify
+EOF
+}
+
+root_path() {
+    local path="$1"
+
+    [[ "$path" == /* ]] ||
+        die "root_path requires an absolute path: $path"
+
+    if [[ "$TARGET_ROOT" == "/" ]]; then
+        printf '%s\n' "$path"
+    else
+        printf '%s%s\n' "${TARGET_ROOT%/}" "$path"
+    fi
+}
+
+prompt_value() {
+    local variable="$1"
+    local label="$2"
+    local default_value="$3"
+    local current_value
+    local response
+
+    current_value="${!variable:-$default_value}"
+
+    if (( NON_INTERACTIVE )); then
+        printf -v "$variable" '%s' "$current_value"
+        return
+    fi
+
+    printf '%s [%s]: ' "$label" "$current_value"
+    read -r response
+
+    if [[ -z "$response" ]]; then
+        response="$current_value"
+    fi
+
+    printf -v "$variable" '%s' "$response"
+}
+
+valid_ipv4() {
+    local ip="$1"
+    local octets
+    local octet
+
+    [[ "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] ||
+        return 1
+
+    IFS='.' read -r -a octets <<< "$ip"
+
+    [[ "${#octets[@]}" -eq 4 ]] ||
+        return 1
+
+    for octet in "${octets[@]}"; do
+        (( 10#$octet >= 0 && 10#$octet <= 255 )) ||
+            return 1
+    done
+}
+
+load_answers() {
+    (( ANSWERS_LOADED == 0 )) || return 0
+
+    if [[ -z "$ANSWERS_FILE" ]]; then
+        ANSWERS_LOADED=1
+        return 0
+    fi
+
+    [[ -f "$ANSWERS_FILE" ]] ||
+        die "answers file does not exist: $ANSWERS_FILE"
+
+    note "loading answers from $ANSWERS_FILE"
+
+    # This file is expected to use the same KEY="value" format as
+    # /etc/proton-router.conf.
+    # shellcheck disable=SC1090
+    source "$ANSWERS_FILE"
+
+    ANSWERS_LOADED=1
+}
+
+collect_router_config() {
+    local default_user
+
+    (( CONFIG_COLLECTED == 0 )) || return 0
+
+    load_answers
+
+    default_user="$(id -un)"
+
+    prompt_value \
+        ROUTER_USER \
+        "Router desktop user" \
+        "$default_user"
+
+    prompt_value \
+        ROUTER_SESSION \
+        "Desktop session" \
+        "rpd-labwc"
+
+    #
+    # LAN/WAN roles are determined from physical hardware.
+    # The user does not choose eth0/eth1.
+    #
+    detect_router_port_roles
+
+    if [[ -n "${LAN_IF:-}" &&
+          "$LAN_IF" != "$DETECTED_LAN_IF" ]]
+    then
+        die "saved LAN interface $LAN_IF does not match the Raspberry Pi built-in RJ45 ($DETECTED_LAN_IF)"
+    fi
+
+    if [[ -n "${WAN_IF:-}" &&
+          "$WAN_IF" != "$DETECTED_WAN_IF" ]]
+    then
+        die "saved WAN interface $WAN_IF does not match the Waveshare Realtek RJ45 ($DETECTED_WAN_IF)"
+    fi
+
+    LAN_IF="$DETECTED_LAN_IF"
+    WAN_IF="$DETECTED_WAN_IF"
+
+    note "LAN interface selected automatically: $LAN_IF"
+    note "WAN interface selected automatically: $WAN_IF"
+
+    prompt_value \
+        LAN_ADDR \
+        "LAN router IPv4 address" \
+        "192.168.50.1"
+
+    prompt_value \
+        LAN_PREFIX \
+        "LAN IPv4 prefix length" \
+        "24"
+
+    prompt_value \
+        DHCP_START \
+        "DHCP pool start" \
+        "192.168.50.100"
+
+    prompt_value \
+        DHCP_END \
+        "DHCP pool end" \
+        "192.168.50.220"
+
+    prompt_value \
+        DHCP_LEASE \
+        "DHCP lease time" \
+        "12h"
+
+    prompt_value \
+        DNS_UPSTREAM \
+        "DNS upstream" \
+        "1.1.1.3"
+
+    prompt_value \
+        BYPASS_MARK \
+        "Bypass packet mark" \
+        "0x50564250"
+
+    prompt_value \
+        BYPASS_TABLE \
+        "Bypass routing table" \
+        "200"
+
+    prompt_value \
+        BYPASS_RULE_PRIORITY \
+        "Bypass policy-rule priority" \
+        "10000"
+
+    CONFIG_COLLECTED=1
+}
+
+validate_router_config() {
+    [[ "$ROUTER_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] ||
+        die "invalid ROUTER_USER: $ROUTER_USER"
+
+    [[ "$ROUTER_SESSION" =~ ^[A-Za-z0-9._+-]+$ ]] ||
+        die "invalid ROUTER_SESSION: $ROUTER_SESSION"
+
+    [[ "$LAN_IF" =~ ^[A-Za-z0-9_.:-]+$ ]] ||
+        die "invalid LAN_IF: $LAN_IF"
+
+    [[ "$WAN_IF" =~ ^[A-Za-z0-9_.:-]+$ ]] ||
+        die "invalid WAN_IF: $WAN_IF"
+
+    [[ "$LAN_IF" != "$WAN_IF" ]] ||
+        die "LAN_IF and WAN_IF must be different"
+
+    valid_ipv4 "$LAN_ADDR" ||
+        die "invalid LAN_ADDR: $LAN_ADDR"
+
+    [[ "$LAN_PREFIX" =~ ^[0-9]+$ ]] &&
+        (( LAN_PREFIX >= 1 && LAN_PREFIX <= 32 )) ||
+        die "invalid LAN_PREFIX: $LAN_PREFIX"
+
+    valid_ipv4 "$DHCP_START" ||
+        die "invalid DHCP_START: $DHCP_START"
+
+    valid_ipv4 "$DHCP_END" ||
+        die "invalid DHCP_END: $DHCP_END"
+
+    [[ "$DHCP_LEASE" =~ ^([0-9]+[smhdw]|infinite)$ ]] ||
+        die "invalid DHCP_LEASE: $DHCP_LEASE"
+
+    valid_ipv4 "$DNS_UPSTREAM" ||
+        die "invalid DNS_UPSTREAM: $DNS_UPSTREAM"
+
+    [[ "$BYPASS_MARK" =~ ^0x[0-9A-Fa-f]+$ ]] ||
+        die "invalid BYPASS_MARK: $BYPASS_MARK"
+
+    [[ "$BYPASS_TABLE" =~ ^[0-9]+$ ]] ||
+        die "invalid BYPASS_TABLE: $BYPASS_TABLE"
+
+    [[ "$BYPASS_RULE_PRIORITY" =~ ^[0-9]+$ ]] ||
+        die "invalid BYPASS_RULE_PRIORITY: $BYPASS_RULE_PRIORITY"
+}
+
+render_router_config() {
+    local template
+    local destination
+    local temporary
+
+    template="$SCRIPT_DIR/config/proton-router.conf.example"
+    destination="$(root_path /etc/proton-router.conf)"
+    temporary="$(mktemp)"
+
+    [[ -f "$template" ]] ||
+        die "missing template: $template"
+
+    cp "$template" "$temporary"
+
+    set_assignment() {
+        local key="$1"
+        local value="$2"
+
+        grep -q "^${key}=" "$temporary" ||
+            die "template does not contain $key"
+
+        sed -i -E \
+            "s|^${key}=.*$|${key}=\"${value}\"|" \
+            "$temporary"
+    }
+
+    set_assignment ROUTER_USER "$ROUTER_USER"
+    set_assignment ROUTER_SESSION "$ROUTER_SESSION"
+    set_assignment LAN_IF "$LAN_IF"
+    set_assignment WAN_IF "$WAN_IF"
+    set_assignment LAN_ADDR "$LAN_ADDR"
+    set_assignment LAN_PREFIX "$LAN_PREFIX"
+    set_assignment DHCP_START "$DHCP_START"
+    set_assignment DHCP_END "$DHCP_END"
+    set_assignment DHCP_LEASE "$DHCP_LEASE"
+    set_assignment DNS_UPSTREAM "$DNS_UPSTREAM"
+    set_assignment BYPASS_MARK "$BYPASS_MARK"
+    set_assignment BYPASS_TABLE "$BYPASS_TABLE"
+    set_assignment BYPASS_RULE_PRIORITY "$BYPASS_RULE_PRIORITY"
+
+    run_root mkdir -p "$(dirname "$destination")"
+
+    run_root install \
+        -o root \
+        -g root \
+        -m 0644 \
+        "$temporary" \
+        "$destination"
+
+    rm -f "$temporary"
+
+    note "created $destination"
+}
+
+phase_config() {
+    note "phase: config"
+
+    load_answers
+    collect_router_config
+    validate_router_config
+    render_router_config
+
+    note "phase config complete"
+}
+
+run_root() {
+    # System-target files should be root-owned in both staged
+    # and live installations. During staging TARGET_ROOT is
+    # confined beneath /tmp (or another explicit test root),
+    # while live / remains separately locked.
+    sudo "$@"
+}
+
+resolve_router_home() {
+    local entry
+
+    [[ -n "${ROUTER_USER:-}" ]] ||
+        ROUTER_USER="$(id -un)"
+
+    [[ "$ROUTER_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] ||
+        die "invalid ROUTER_USER: $ROUTER_USER"
+
+    entry="$(getent passwd "$ROUTER_USER" || true)"
+
+    [[ -n "$entry" ]] ||
+        die "router user does not exist: $ROUTER_USER"
+
+    ROUTER_HOME="$(awk -F: '{print $6}' <<< "$entry")"
+
+    [[ "$ROUTER_HOME" == /* ]] ||
+        die "invalid home directory for $ROUTER_USER: $ROUTER_HOME"
+
+    note "router user: $ROUTER_USER"
+    note "router home: $ROUTER_HOME"
+}
+
+install_system_source() {
+    local source_rel="$1"
+    local destination_abs="$2"
+    local mode="$3"
+    local source
+    local destination
+
+    source="$SCRIPT_DIR/$source_rel"
+    destination="$(root_path "$destination_abs")"
+
+    [[ -f "$source" ]] ||
+        die "missing source file: $source"
+
+    run_root mkdir -p "$(dirname "$destination")"
+
+    run_root install \
+        -m "$mode" \
+        "$source" \
+        "$destination"
+
+    note "installed $destination_abs"
+}
+
+install_system_tree() {
+    local source_rel="$1"
+    local destination_abs="$2"
+    local directory_mode="${3:-0755}"
+
+    local source
+    local destination
+
+    source="$SCRIPT_DIR/$source_rel"
+    destination="$(root_path "$destination_abs")"
+
+    [[ -d "$source" ]] ||
+        die "missing source tree: $source"
+
+    run_root rm -rf -- "$destination"
+
+    run_root install \
+        -d \
+        -o root \
+        -g root \
+        -m "$directory_mode" \
+        "$destination"
+
+    run_root cp \
+        -a \
+        -- "$source/." \
+        "$destination/"
+
+    run_root chown \
+        -R \
+        root:root \
+        "$destination"
+}
+
+install_user_source() {
+    local source_rel="$1"
+    local relative_destination="$2"
+    local mode="$3"
+    local source
+    local destination
+
+    source="$SCRIPT_DIR/$source_rel"
+    destination="$(
+        root_path \
+            "$ROUTER_HOME/$relative_destination"
+    )"
+
+    [[ -f "$source" ]] ||
+        die "missing source file: $source"
+
+    mkdir -p "$(dirname "$destination")"
+
+    install \
+        -m "$mode" \
+        "$source" \
+        "$destination"
+
+    note "installed $ROUTER_HOME/$relative_destination"
+}
+
+install_dispatcher_hardlink() {
+    local source
+    local destination
+
+    source="$(root_path /usr/local/sbin/proton-bypass)"
+    destination="$(
+        root_path \
+            /etc/NetworkManager/dispatcher.d/90-proton-bypass
+    )"
+
+    [[ -f "$source" ]] ||
+        die "proton-bypass must be installed before dispatcher"
+
+    run_root mkdir -p "$(dirname "$destination")"
+    run_root rm -f "$destination"
+    run_root ln "$source" "$destination"
+
+    note "created NetworkManager proton-bypass hardlink"
+}
+
+phase_files() {
+    note "phase: files"
+
+    load_answers
+
+    if [[ -z "${ROUTER_USER:-}" ]]; then
+        if (( NON_INTERACTIVE )); then
+            ROUTER_USER="$(id -un)"
+        else
+            prompt_value \
+                ROUTER_USER \
+                "Router desktop user" \
+                "$(id -un)"
+        fi
+    fi
+
+    resolve_router_home
+
+    #
+    # Core router executables
+    #
+    install_system_source \
+        scripts/proton-router-apply-conf \
+        /usr/local/sbin/proton-router-apply-conf \
+        0755
+
+    install_system_source \
+        scripts/proton-bypass \
+        /usr/local/sbin/proton-bypass \
+        0755
+
+    install_system_source \
+        scripts/proton-keyring-init \
+        /usr/local/sbin/proton-keyring-init \
+        0755
+
+    install_system_source \
+        scripts/proton-router-vpn-refresh \
+        /usr/local/sbin/proton-router-vpn-refresh \
+        0755
+
+    install_system_tree \
+        lib/proton-router/vpn-block \
+        /usr/local/lib/proton-router/vpn-block \
+        0755
+
+    #
+    # Static router policy
+    #
+    install_system_source \
+        config/nftables.conf \
+        /etc/nftables.conf \
+        0755
+
+    install_system_source \
+        config/dnsmasq-router.conf \
+        /etc/dnsmasq.d/router.conf \
+        0644
+
+    install_system_source \
+        config/90-proton-router-domain-block.conf \
+        /etc/dnsmasq.d/90-proton-router-domain-block.conf \
+        0644
+
+    install_system_source \
+        config/proton-router-vpn-refresh.service \
+        /etc/systemd/system/proton-router-vpn-refresh.service \
+        0644
+
+    install_system_source \
+        config/proton-router-vpn-refresh.timer \
+        /etc/systemd/system/proton-router-vpn-refresh.timer \
+        0644
+
+    install_system_source \
+        config/99-router.conf \
+        /etc/sysctl.d/99-router.conf \
+        0644
+
+    #
+    # NetworkManager startup behavior
+    #
+    install_system_source \
+        config/NetworkManager-wait-online.override.conf \
+        /etc/systemd/system/NetworkManager-wait-online.service.d/override.conf \
+        0644
+
+    install_dispatcher_hardlink
+
+    #
+    # Router-user Proton support
+    #
+    install_user_source \
+        scripts/protonvpn-autoconnect \
+        .local/bin/protonvpn-autoconnect \
+        0700
+
+    install_user_source \
+        config/protonvpn-autoconnect.service \
+        .config/systemd/user/protonvpn-autoconnect.service \
+        0664
+
+    install_user_source \
+        config/proton-router-web.service \
+        .config/systemd/user/proton-router-web.service \
+        0644
+
+    install_user_source \
+        config/gnome-keyring-secrets.desktop \
+        .config/autostart/gnome-keyring-secrets.desktop \
+        0664
+
+    #
+    # Web interface
+    #
+    install_system_source \
+        web/index.html \
+        /usr/local/share/proton-router-web/index.html \
+        0644
+
+    install_system_source \
+        web/app.js \
+        /usr/local/share/proton-router-web/app.js \
+        0644
+
+    install_system_source \
+        web/styles.css \
+        /usr/local/share/proton-router-web/styles.css \
+        0644
+
+    install_system_source \
+        web/server.py \
+        /usr/local/share/proton-router-web/server.py \
+        0755
+
+    note "phase files complete"
+}
+
+valid_mac() {
+    local mac="$1"
+
+    [[ "$mac" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]
+}
+
+validate_bypass_file() {
+    local file="$1"
+    local line
+    local mac
+    local ip
+    local lease
+    local mac_key
+    local record_count=0
+    local line_number=0
+
+    declare -A seen_mac=()
+    declare -A seen_ip=()
+
+    [[ -f "$file" ]] ||
+        die "bypass file does not exist: $file"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        ((line_number += 1))
+
+        line="${line%$'\r'}"
+
+        if [[ "$line" =~ ^[[:space:]]*$ ]] ||
+           [[ "$line" =~ ^[[:space:]]*# ]]; then
+            continue
+        fi
+
+        IFS=',' read -r mac ip lease extra <<< "$line"
+
+        [[ -z "${extra:-}" ]] ||
+            die "invalid bypass record at line $line_number: too many fields"
+
+        [[ -n "${mac:-}" &&
+           -n "${ip:-}" &&
+           -n "${lease:-}" ]] ||
+            die "invalid bypass record at line $line_number: expected MAC,IPv4,lease-time"
+
+        valid_mac "$mac" ||
+            die "invalid bypass MAC at line $line_number"
+
+        valid_ipv4 "$ip" ||
+            die "invalid bypass IPv4 at line $line_number"
+
+        [[ "$lease" == "infinite" ]] ||
+            die "invalid bypass lease at line $line_number: must be infinite"
+
+        mac_key="${mac,,}"
+
+        [[ -z "${seen_mac[$mac_key]+x}" ]] ||
+            die "duplicate bypass MAC at line $line_number"
+
+        [[ -z "${seen_ip[$ip]+x}" ]] ||
+            die "duplicate bypass IPv4 at line $line_number"
+
+        seen_mac["$mac_key"]=1
+        seen_ip["$ip"]=1
+
+        ((record_count += 1))
+    done < "$file"
+
+    BYPASS_RECORD_COUNT="$record_count"
+}
+
+bypass_contains_mac() {
+    local file="$1"
+    local wanted="${2,,}"
+    local line
+    local mac
+    local ip
+    local lease
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^[[:space:]]*($|#) ]] &&
+            continue
+
+        IFS=',' read -r mac ip lease <<< "$line"
+
+        if [[ "${mac,,}" == "$wanted" ]]; then
+            return 0
+        fi
+    done < "$file"
+
+    return 1
+}
+
+bypass_contains_ip() {
+    local file="$1"
+    local wanted="$2"
+    local line
+    local mac
+    local ip
+    local lease
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^[[:space:]]*($|#) ]] &&
+            continue
+
+        IFS=',' read -r mac ip lease <<< "$line"
+
+        if [[ "$ip" == "$wanted" ]]; then
+            return 0
+        fi
+    done < "$file"
+
+    return 1
+}
+
+collect_bypass_devices() {
+    local file="$1"
+    local answer
+    local mac
+    local ip
+
+    if (( NON_INTERACTIVE )); then
+        note "no --bypass-file supplied; using empty bypass-device list"
+        return
+    fi
+
+    while true; do
+        printf 'Add a raw-WAN bypass device? [y/N]: '
+        read -r answer
+
+        case "${answer,,}" in
+            y|yes)
+                ;;
+            n|no|"")
+                break
+                ;;
+            *)
+                printf 'Please answer y or n.\n'
+                continue
+                ;;
+        esac
+
+        while true; do
+            printf 'Device MAC address: '
+            read -r mac
+            mac="${mac,,}"
+
+            if ! valid_mac "$mac"; then
+                printf 'Invalid MAC address. Try again.\n'
+                continue
+            fi
+
+            if bypass_contains_mac "$file" "$mac"; then
+                printf 'That MAC address is already configured. Try again.\n'
+                continue
+            fi
+
+            break
+        done
+
+        while true; do
+            printf 'Reserved LAN IPv4 address: '
+            read -r ip
+
+            if ! valid_ipv4 "$ip"; then
+                printf 'Invalid IPv4 address. Try again.\n'
+                continue
+            fi
+
+            if bypass_contains_ip "$file" "$ip"; then
+                printf 'That IPv4 address is already configured. Try again.\n'
+                continue
+            fi
+
+            break
+        done
+
+        printf '%s,%s,infinite\n' \
+            "$mac" \
+            "$ip" \
+            >> "$file"
+
+        note "bypass device added to pending configuration"
+    done
+}
+
+phase_bypass() {
+    local template
+    local destination
+    local temporary
+
+    note "phase: bypass"
+
+    template="$SCRIPT_DIR/config/proton-bypass-devices.conf.example"
+    destination="$(root_path /etc/proton-bypass/devices.conf)"
+    temporary="$(mktemp)"
+
+    trap 'rm -f "$temporary"' RETURN
+
+    [[ -f "$template" ]] ||
+        die "missing bypass template: $template"
+
+    if [[ -n "$BYPASS_FILE_INPUT" ]]; then
+        [[ -f "$BYPASS_FILE_INPUT" ]] ||
+            die "bypass input file does not exist: $BYPASS_FILE_INPUT"
+
+        cat "$BYPASS_FILE_INPUT" > "$temporary"
+
+        note "loaded private bypass-device file"
+    else
+        cp "$template" "$temporary"
+        note "no --bypass-file supplied; using empty bypass-device list"
+    fi
+
+    validate_bypass_file "$temporary"
+
+    run_root mkdir -p "$(dirname "$destination")"
+
+    run_root install \
+        -o root \
+        -g root \
+        -m 0644 \
+        "$temporary" \
+        "$destination"
+
+    note "validated bypass records: $BYPASS_RECORD_COUNT"
+    note "installed bypass-device state"
+    note "phase bypass complete"
+
+    trap - RETURN
+    rm -f "$temporary"
+}
+
+realtek_pcie_nic_present() {
+    local dev
+    local vendor
+    local device_id
+    local class_id
+
+    for dev in /sys/bus/pci/devices/*; do
+        [[ -d "$dev" ]] || continue
+        [[ -r "$dev/vendor" ]] || continue
+        [[ -r "$dev/device" ]] || continue
+        [[ -r "$dev/class" ]] || continue
+
+        vendor="$(cat "$dev/vendor")"
+        device_id="$(cat "$dev/device")"
+        class_id="$(cat "$dev/class")"
+
+        if [[ "${vendor,,}" == "0x10ec" &&
+              "${device_id,,}" == "0x8168" &&
+              "${class_id,,}" == "0x020000" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+
+detect_router_port_roles() {
+    local dev
+    local name
+    local type
+    local driver
+    local vendor
+    local device_id
+    local device_path
+
+    local -a lan_candidates=()
+    local -a wan_candidates=()
+
+    for dev in /sys/class/net/*; do
+        [[ -e "$dev" ]] || continue
+
+        name="${dev##*/}"
+
+        [[ "$name" != "lo" ]] || continue
+        [[ -r "$dev/type" ]] || continue
+
+        type="$(cat "$dev/type")"
+
+        # ARPHRD_ETHER only.
+        [[ "$type" == "1" ]] || continue
+
+        driver=""
+        vendor=""
+        device_id=""
+        device_path=""
+
+        if [[ -L "$dev/device/driver" ]]; then
+            driver="$(
+                basename "$(
+                    readlink -f "$dev/device/driver"
+                )"
+            )"
+        fi
+
+        device_path="$(
+            readlink -f "$dev/device" 2>/dev/null ||
+            true
+        )"
+
+        vendor="$(
+            cat "$dev/device/vendor" 2>/dev/null ||
+            true
+        )"
+
+        device_id="$(
+            cat "$dev/device/device" 2>/dev/null ||
+            true
+        )"
+
+        #
+        # Raspberry Pi 5 built-in RJ45 = LAN.
+        #
+        if [[ "$driver" == "macb" &&
+              "$device_path" == */platform/*ethernet* ]]
+        then
+            lan_candidates+=("$name")
+        fi
+
+        #
+        # Waveshare PCIe Realtek 10ec:8168 RJ45 = WAN.
+        #
+        if [[ "${vendor,,}" == "0x10ec" &&
+              "${device_id,,}" == "0x8168" ]]
+        then
+            wan_candidates+=("$name")
+        fi
+    done
+
+    ((${#lan_candidates[@]} == 1)) ||
+        die "expected exactly one Raspberry Pi built-in Ethernet interface; found ${#lan_candidates[@]}"
+
+    ((${#wan_candidates[@]} == 1)) ||
+        die "expected exactly one Waveshare Realtek 10ec:8168 Ethernet interface; found ${#wan_candidates[@]}"
+
+    DETECTED_LAN_IF="${lan_candidates[0]}"
+    DETECTED_WAN_IF="${wan_candidates[0]}"
+
+    [[ "$DETECTED_LAN_IF" != "$DETECTED_WAN_IF" ]] ||
+        die "LAN and WAN hardware detection resolved to the same interface"
+
+    note "physical port roles detected:"
+    note "  LAN = Raspberry Pi built-in RJ45 ($DETECTED_LAN_IF)"
+    note "  WAN = Waveshare PCIe Realtek RJ45 ($DETECTED_WAN_IF)"
+}
+
+determine_pcie_state() {
+    case "$PCIE_STATE" in
+        present|missing)
+            EFFECTIVE_PCIE_STATE="$PCIE_STATE"
+            note "using explicit PCIe test state: $EFFECTIVE_PCIE_STATE"
+            ;;
+
+        auto)
+            if [[ "$TARGET_ROOT" != "/" ]]; then
+                die "staging boot phase requires --pcie-state present or missing"
+            fi
+
+            if realtek_pcie_nic_present; then
+                EFFECTIVE_PCIE_STATE="present"
+            else
+                EFFECTIVE_PCIE_STATE="missing"
+            fi
+
+            note "detected PCIe state: $EFFECTIVE_PCIE_STATE"
+            ;;
+
+        *)
+            die "invalid --pcie-state: $PCIE_STATE"
+            ;;
+    esac
+}
+
+active_pcie_enable_count() {
+    local config="$1"
+
+    grep -Ec \
+        '^[[:space:]]*dtparam=(pciex1|nvme)[[:space:]]*$' \
+        "$config" ||
+        true
+}
+
+active_pcie_gen3_count() {
+    local config="$1"
+
+    grep -Ec \
+        '^[[:space:]]*dtparam=pciex1_gen=3[[:space:]]*$' \
+        "$config" ||
+        true
+}
+
+add_pcie_enablement() {
+    local config="$1"
+    local temporary
+
+    temporary="$(mktemp)"
+
+    trap 'rm -f "$temporary"' RETURN
+
+    awk '
+    {
+        lines[NR]=$0
+
+        if ($0 ~ /^[[:space:]]*\[all\][[:space:]]*$/)
+            last_all=NR
+    }
+    END {
+        if (last_all) {
+            for (i=1; i<=NR; i++) {
+                print lines[i]
+
+                if (i == last_all)
+                    print "dtparam=pciex1"
+            }
+        } else {
+            for (i=1; i<=NR; i++)
+                print lines[i]
+
+            if (NR > 0 && lines[NR] != "")
+                print ""
+
+            print "[all]"
+            print "dtparam=pciex1"
+        }
+    }
+    ' "$config" > "$temporary"
+
+    run_root tee "$config" \
+        < "$temporary" \
+        >/dev/null
+
+    trap - RETURN
+    rm -f "$temporary"
+}
+
+phase_boot() {
+    local config
+    local enable_count
+    local gen3_count
+
+    note "phase: boot"
+
+    config="$(root_path /boot/firmware/config.txt)"
+
+    [[ -f "$config" ]] ||
+        die "boot configuration does not exist: $config"
+
+    determine_pcie_state
+
+    gen3_count="$(active_pcie_gen3_count "$config")"
+
+    if (( gen3_count > 0 )); then
+        die "active PCIe Gen3 override found; target appliance does not use Gen3"
+    fi
+
+    enable_count="$(active_pcie_enable_count "$config")"
+
+    if (( enable_count > 1 )); then
+        die "multiple active PCIe x1 enablement lines found"
+    fi
+
+    if [[ "$EFFECTIVE_PCIE_STATE" == "present" ]]; then
+        note "Realtek RTL8111/8168 PCIe controller is present"
+        note "leaving boot configuration unchanged"
+        note "phase boot complete"
+        return
+    fi
+
+    if (( enable_count == 1 )); then
+        note "PCIe controller is missing but PCIe x1 enablement is already configured"
+        note "boot configuration unchanged"
+        note "a reboot or hardware check may be required"
+        note "phase boot complete"
+        return
+    fi
+
+    add_pcie_enablement "$config"
+
+    enable_count="$(active_pcie_enable_count "$config")"
+
+    [[ "$enable_count" == "1" ]] ||
+        die "failed to install exactly one PCIe x1 enablement setting"
+
+    note "added dtparam=pciex1"
+    note "reboot required before PCIe hardware verification"
+    note "phase boot complete"
+}
+
+package_installed() {
+    local package="$1"
+
+    dpkg-query \
+        -W \
+        -f='${Status}' \
+        "$package" \
+        2>/dev/null |
+        grep -qx 'install ok installed'
+}
+
+read_package_file() {
+    local file="$1"
+    local line
+    local package
+
+    [[ -f "$file" ]] ||
+        die "package list does not exist: $file"
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Remove comments.
+        line="${line%%#*}"
+
+        # Trim leading whitespace.
+        line="${line#"${line%%[![:space:]]*}"}"
+
+        # Trim trailing whitespace.
+        line="${line%"${line##*[![:space:]]}"}"
+
+        [[ -n "$line" ]] || continue
+
+        package="$line"
+
+        [[ "$package" =~ ^[a-z0-9][a-z0-9+.-]*(:[a-z0-9]+)?$ ]] ||
+            die "invalid package name in $file: $package"
+
+        printf '%s\n' "$package"
+    done < "$file"
+}
+
+require_host_command() {
+    local command_name="$1"
+
+    command -v "$command_name" >/dev/null 2>&1 ||
+        die "required Raspberry Pi OS command is missing: $command_name"
+}
+
+load_proton_repository_config() {
+    local config
+
+    config="$SCRIPT_DIR/config/proton-repository.conf"
+
+    [[ -f "$config" ]] ||
+        die "missing Proton repository configuration: $config"
+
+    # shellcheck disable=SC1090
+    source "$config"
+
+    [[ "${PROTON_REPO_HOST:-}" == "repo.protonvpn.com" ]] ||
+        die "unexpected Proton repository host"
+
+    [[ "${PROTON_REPO_PATH:-}" == /* ]] ||
+        die "invalid Proton repository path"
+
+    [[ "${PROTON_REPO_PACKAGE:-}" =~ ^protonvpn-stable-release_[0-9][0-9A-Za-z._+-]*_all\.deb$ ]] ||
+        die "invalid Proton repository package name"
+
+    [[ "${PROTON_REPO_SHA256:-}" =~ ^[0-9a-fA-F]{64}$ ]] ||
+        die "invalid Proton repository SHA-256"
+}
+
+phase_platform() {
+    local os_id
+    local os_codename
+    local architecture
+    local machine
+    local model
+    local package
+    local required_count=0
+    local installed_count=0
+    local missing_count=0
+    local repo_configured=0
+
+    local requirements_file
+    local optional_file
+
+    local -a baseline_packages
+    local -a baseline_commands
+    local -a required_packages
+    local -a optional_packages
+
+    note "phase: platform"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: validating the running host platform read-only"
+    fi
+
+    [[ -r /etc/os-release ]] ||
+        die "/etc/os-release is missing"
+
+    os_id="$(
+        . /etc/os-release
+        printf '%s' "${ID:-}"
+    )"
+
+    os_codename="$(
+        . /etc/os-release
+        printf '%s' "${VERSION_CODENAME:-}"
+    )"
+
+    architecture="$(dpkg --print-architecture)"
+    machine="$(uname -m)"
+
+    [[ "$os_id" == "debian" ]] ||
+        die "tested appliance requires Debian-based Raspberry Pi OS; found ID=$os_id"
+
+    [[ "$os_codename" == "trixie" ]] ||
+        die "tested appliance requires Debian 13/trixie; found $os_codename"
+
+    [[ "$architecture" == "arm64" ]] ||
+        die "tested appliance requires dpkg architecture arm64; found $architecture"
+
+    [[ "$machine" == "aarch64" ]] ||
+        die "tested appliance requires aarch64 kernel; found $machine"
+
+    note "OS: Debian $os_codename"
+    note "architecture: $architecture / $machine"
+
+    if [[ -r /proc/device-tree/model ]]; then
+        model="$(
+            tr -d '\000' < /proc/device-tree/model
+        )"
+
+        [[ "$model" == *"Raspberry Pi 5"* ]] ||
+            die "tested appliance requires Raspberry Pi 5 hardware; found: $model"
+
+        note "hardware: $model"
+    else
+        die "cannot identify Raspberry Pi hardware"
+    fi
+
+    baseline_packages=(
+        network-manager
+        lightdm
+        gnome-keyring
+        python3
+        sudo
+        dbus
+    )
+
+    for package in "${baseline_packages[@]}"; do
+        package_installed "$package" ||
+            die "Raspberry Pi OS Desktop baseline package missing: $package"
+    done
+
+    note "desktop baseline packages: OK"
+
+    baseline_commands=(
+        apt-get
+        dpkg
+        wget
+        sha256sum
+        nmcli
+        ip
+        python3
+        gnome-keyring-daemon
+        dbus-run-session
+        gdbus
+        systemd-analyze
+        visudo
+    )
+
+    for package in "${baseline_commands[@]}"; do
+        require_host_command "$package"
+    done
+
+    note "desktop baseline commands: OK"
+
+    [[ -f /usr/share/wayland-sessions/rpd-labwc.desktop ]] ||
+        die "rpd-labwc desktop session is missing"
+
+    note "desktop session rpd-labwc: OK"
+
+    if package_installed proton-vpn-gnome-desktop; then
+        die "proton-vpn-gnome-desktop is installed; this appliance is CLI-only"
+    fi
+
+    note "Proton GUI package: absent as expected"
+
+    requirements_file="$SCRIPT_DIR/requirements-apt.txt"
+    optional_file="$SCRIPT_DIR/requirements-optional.txt"
+
+    mapfile -t required_packages < <(
+        read_package_file "$requirements_file"
+    )
+
+    mapfile -t optional_packages < <(
+        read_package_file "$optional_file"
+    )
+
+    (( ${#required_packages[@]} > 0 )) ||
+        die "required package list is empty"
+
+    note "required package plan:"
+
+    for package in "${required_packages[@]}"; do
+        ((required_count += 1))
+
+        if package_installed "$package"; then
+            ((installed_count += 1))
+            printf '  INSTALLED %s\n' "$package"
+        else
+            ((missing_count += 1))
+            printf '  MISSING   %s\n' "$package"
+        fi
+    done
+
+    printf 'setup: required packages: total=%d installed=%d missing=%d\n' \
+        "$required_count" \
+        "$installed_count" \
+        "$missing_count"
+
+    note "optional package list contains ${#optional_packages[@]} package(s)"
+
+    load_proton_repository_config
+
+    if package_installed protonvpn-stable-release; then
+        note "Proton stable repository bootstrap package: installed"
+    else
+        note "Proton stable repository bootstrap package: not installed"
+    fi
+
+    if grep -Rqs \
+        'repo.protonvpn.com/debian' \
+        /etc/apt/sources.list \
+        /etc/apt/sources.list.d \
+        2>/dev/null
+    then
+        repo_configured=1
+        note "Proton apt repository: configured"
+    else
+        note "Proton apt repository: not configured"
+    fi
+
+    if package_installed proton-vpn-cli; then
+        command -v protonvpn >/dev/null 2>&1 ||
+            die "proton-vpn-cli is installed but protonvpn command is missing"
+
+        note "Proton CLI command: $(command -v protonvpn)"
+    elif (( ! repo_configured )); then
+        note "Proton CLI is not installed; repository bootstrap will be required"
+    fi
+
+    note "phase platform complete"
+}
+
+phase_repository() {
+    local temporary_dir
+    local package_file
+    local package_url
+    local package_name
+    local package_version
+    local package_arch
+    local expected_version
+    local expected_source
+    local expected_keyring
+
+    note "phase: repository"
+
+    load_proton_repository_config
+
+    require_host_command wget
+    require_host_command sha256sum
+    require_host_command dpkg-deb
+
+    temporary_dir="$(mktemp -d)"
+
+    trap 'rm -rf -- "$temporary_dir"' EXIT
+
+    package_file="$temporary_dir/$PROTON_REPO_PACKAGE"
+
+    package_url="https://${PROTON_REPO_HOST}${PROTON_REPO_PATH}/${PROTON_REPO_PACKAGE}"
+
+    note "downloading Proton stable repository bootstrap"
+
+    wget \
+        --https-only \
+        --output-document="$package_file" \
+        "$package_url"
+
+    note "verifying Proton repository package SHA-256"
+
+    if ! printf '%s  %s\n' \
+        "$PROTON_REPO_SHA256" \
+        "$package_file" |
+        sha256sum --check --status -
+    then
+        die "Proton repository package SHA-256 verification failed"
+    fi
+
+    note "repository package SHA-256: OK"
+
+    package_name="$(
+        dpkg-deb --field \
+            "$package_file" \
+            Package
+    )"
+
+    package_version="$(
+        dpkg-deb --field \
+            "$package_file" \
+            Version
+    )"
+
+    package_arch="$(
+        dpkg-deb --field \
+            "$package_file" \
+            Architecture
+    )"
+
+    expected_version="$PROTON_REPO_PACKAGE"
+    expected_version="${expected_version#protonvpn-stable-release_}"
+    expected_version="${expected_version%_all.deb}"
+
+    [[ "$package_name" == "protonvpn-stable-release" ]] ||
+        die "unexpected Proton repository package name: $package_name"
+
+    [[ "$package_version" == "$expected_version" ]] ||
+        die "unexpected Proton repository package version: $package_version"
+
+    [[ "$package_arch" == "all" ]] ||
+        die "unexpected Proton repository package architecture: $package_arch"
+
+    note "repository package metadata: $package_name $package_version $package_arch"
+
+    expected_source="$(
+        root_path \
+            /etc/apt/sources.list.d/protonvpn-stable.sources
+    )"
+
+    expected_keyring="$(
+        root_path \
+            /usr/share/keyrings/protonvpn-stable-archive-keyring.gpg
+    )"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: extracting repository package only"
+
+        run_root dpkg-deb \
+            --extract \
+            "$package_file" \
+            "$TARGET_ROOT"
+
+        [[ -f "$expected_source" ]] ||
+            die "repository package did not create protonvpn-stable.sources"
+
+        [[ -f "$expected_keyring" ]] ||
+            die "repository package did not create Proton archive keyring"
+
+        grep -q \
+            '^URIs: https://repo\.protonvpn\.com/debian$' \
+            "$expected_source" ||
+            die "unexpected Proton repository URI"
+
+        grep -q \
+            '^Suites: stable$' \
+            "$expected_source" ||
+            die "unexpected Proton repository suite"
+
+        grep -q \
+            '^Components: main$' \
+            "$expected_source" ||
+            die "unexpected Proton repository component"
+
+        grep -q \
+            '^Signed-By: /usr/share/keyrings/protonvpn-stable-archive-keyring\.gpg$' \
+            "$expected_source" ||
+            die "unexpected Proton repository signing-key path"
+
+        note "repository source structure: OK"
+        note "repository signing key: present"
+        note "phase repository complete"
+
+        trap - EXIT
+        rm -rf -- "$temporary_dir"
+        return
+    fi
+
+    #
+    # Live installation path.
+    #
+    # The global development safety lock currently prevents this
+    # branch from executing. It will be unlocked only after staged
+    # testing of the complete installer succeeds.
+    #
+    note "installing Proton stable repository bootstrap"
+
+    sudo dpkg --force-confmiss -i "$package_file"
+
+    note "refreshing apt package indexes"
+
+    sudo apt-get update
+
+    package_installed protonvpn-stable-release ||
+        die "Proton stable repository package was not installed"
+
+    [[ -f "$expected_source" ]] ||
+        die "Proton apt source is missing after installation"
+
+    [[ -f "$expected_keyring" ]] ||
+        die "Proton signing key is missing after installation"
+
+    note "Proton stable repository installed"
+    note "phase repository complete"
+
+    trap - EXIT
+    rm -rf -- "$temporary_dir"
+}
+
+phase_packages() {
+    local requirements_file
+    local optional_file
+    local package
+    local installed_count=0
+    local pending_count=0
+
+    local -a required_packages
+    local -a optional_packages
+    local -a install_packages
+
+    note "phase: packages"
+
+    require_host_command apt-get
+    require_host_command dpkg-query
+
+    requirements_file="$SCRIPT_DIR/requirements-apt.txt"
+    optional_file="$SCRIPT_DIR/requirements-optional.txt"
+
+    mapfile -t required_packages < <(
+        read_package_file "$requirements_file"
+    )
+
+    (( ${#required_packages[@]} > 0 )) ||
+        die "required package list is empty"
+
+    install_packages=(
+        "${required_packages[@]}"
+    )
+
+    if (( INSTALL_OPTIONAL )); then
+        mapfile -t optional_packages < <(
+            read_package_file "$optional_file"
+        )
+
+        install_packages+=(
+            "${optional_packages[@]}"
+        )
+
+        note "including ${#optional_packages[@]} optional package(s)"
+    else
+        note "optional packages not requested"
+    fi
+
+    note "package install plan:"
+
+    for package in "${install_packages[@]}"; do
+        if package_installed "$package"; then
+            ((installed_count += 1))
+            printf '  INSTALLED %s\n' "$package"
+        else
+            ((pending_count += 1))
+            printf '  PENDING   %s\n' "$package"
+        fi
+    done
+
+    printf 'setup: package plan: total=%d installed=%d pending=%d\n' \
+        "${#install_packages[@]}" \
+        "$installed_count" \
+        "$pending_count"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: apt simulation only"
+
+        apt-get \
+            --simulate \
+            --no-remove \
+            install \
+            "${install_packages[@]}"
+
+        note "apt simulation: OK"
+        note "phase packages complete"
+        return
+    fi
+
+    #
+    # Live installation path.
+    #
+    # The global development safety lock currently prevents this
+    # branch from executing. It will be unlocked only after staged
+    # testing of the complete installer succeeds.
+    #
+    note "installing package plan"
+
+    sudo apt-get \
+        install \
+        -y \
+        --no-remove \
+        "${install_packages[@]}"
+
+    for package in "${install_packages[@]}"; do
+        package_installed "$package" ||
+            die "package was not installed successfully: $package"
+    done
+
+    note "all requested packages installed"
+    note "phase packages complete"
+}
+
+normalize_nm_keyfile() {
+    sed -E \
+        -e '/^uuid=/d' \
+        -e '/^timestamp=/d'
+}
+
+nm_keyfile_matches() {
+    local existing="$1"
+    local candidate="$2"
+
+    [[ -f "$existing" ]] ||
+        return 1
+
+    cmp -s \
+        <(
+            run_root cat "$existing" |
+                normalize_nm_keyfile
+        ) \
+        <(
+            normalize_nm_keyfile < "$candidate"
+        )
+}
+
+render_nm_profile() {
+    local role="$1"
+    local output="$2"
+
+    case "$role" in
+        LAN)
+            nmcli \
+                --offline \
+                connection add \
+                type ethernet \
+                con-name LAN \
+                ifname "$LAN_IF" \
+                connection.autoconnect-priority -999 \
+                ipv4.method manual \
+                ipv4.addresses "$LAN_ADDR/$LAN_PREFIX" \
+                ipv4.never-default yes \
+                ipv6.method disabled \
+                > "$output"
+            ;;
+
+        WAN)
+            nmcli \
+                --offline \
+                connection add \
+                type ethernet \
+                con-name WAN \
+                ifname "$WAN_IF" \
+                ipv4.method auto \
+                ipv4.dns 127.0.0.1 \
+                ipv4.ignore-auto-dns yes \
+                ipv6.method disabled \
+                > "$output"
+            ;;
+
+        *)
+            die "unknown NetworkManager profile role: $role"
+            ;;
+    esac
+
+    [[ -s "$output" ]] ||
+        die "nmcli generated an empty $role profile"
+}
+
+validate_nm_profile() {
+    local role="$1"
+    local file="$2"
+
+    grep -qx 'type=ethernet' "$file" ||
+        die "$role profile is not Ethernet"
+
+    grep -qx 'method=disabled' "$file" ||
+        die "$role profile does not disable IPv6"
+
+    case "$role" in
+        LAN)
+            grep -qx 'id=LAN' "$file" ||
+                die "generated LAN profile has wrong connection ID"
+
+            grep -qx "interface-name=$LAN_IF" "$file" ||
+                die "generated LAN profile has wrong interface"
+
+            grep -qx 'autoconnect-priority=-999' "$file" ||
+                die "generated LAN profile has wrong autoconnect priority"
+
+            grep -qx "address1=$LAN_ADDR/$LAN_PREFIX" "$file" ||
+                die "generated LAN profile has wrong IPv4 address"
+
+            grep -qx 'method=manual' "$file" ||
+                die "generated LAN profile is not manual IPv4"
+
+            grep -qx 'never-default=true' "$file" ||
+                die "generated LAN profile is not marked never-default"
+            ;;
+
+        WAN)
+            grep -qx 'id=WAN' "$file" ||
+                die "generated WAN profile has wrong connection ID"
+
+            grep -qx "interface-name=$WAN_IF" "$file" ||
+                die "generated WAN profile has wrong interface"
+
+            grep -qx 'method=auto' "$file" ||
+                die "generated WAN profile is not DHCP"
+
+            grep -qx 'dns=127.0.0.1;' "$file" ||
+                die "generated WAN profile has wrong DNS setting"
+
+            grep -qx 'ignore-auto-dns=true' "$file" ||
+                die "generated WAN profile does not ignore ISP DNS"
+
+            if grep -qE \
+                '^(route[0-9]+|routes?)=' \
+                "$file"
+            then
+                die "generated WAN profile unexpectedly contains a persistent route"
+            fi
+            ;;
+    esac
+}
+
+install_nm_profile() {
+    local role="$1"
+    local candidate="$2"
+    local destination="$3"
+
+    if nm_keyfile_matches "$destination" "$candidate"; then
+        note "$role NetworkManager profile already matches"
+        return
+    fi
+
+    run_root install \
+        -D \
+        -o root \
+        -g root \
+        -m 0600 \
+        "$candidate" \
+        "$destination"
+
+    NETWORK_PROFILES_CHANGED=1
+
+    note "installed $role NetworkManager profile"
+}
+
+phase_network() {
+    local temporary_dir
+    local lan_candidate
+    local wan_candidate
+    local lan_destination
+    local wan_destination
+
+    NETWORK_PROFILES_CHANGED=0
+
+    note "phase: network"
+
+    require_host_command nmcli
+
+    collect_router_config
+    validate_router_config
+
+    temporary_dir="$(mktemp -d)"
+
+    trap 'rm -rf -- "$temporary_dir"' EXIT
+
+    lan_candidate="$temporary_dir/LAN.nmconnection"
+    wan_candidate="$temporary_dir/WAN.nmconnection"
+
+    lan_destination="$(
+        root_path \
+            /etc/NetworkManager/system-connections/LAN.nmconnection
+    )"
+
+    wan_destination="$(
+        root_path \
+            /etc/NetworkManager/system-connections/WAN.nmconnection
+    )"
+
+    note "generating NetworkManager profiles with nmcli --offline"
+
+    render_nm_profile LAN "$lan_candidate"
+    render_nm_profile WAN "$wan_candidate"
+
+    validate_nm_profile LAN "$lan_candidate"
+    validate_nm_profile WAN "$wan_candidate"
+
+    note "generated LAN profile: OK"
+    note "generated WAN profile: OK"
+
+    install_nm_profile \
+        LAN \
+        "$lan_candidate" \
+        "$lan_destination"
+
+    install_nm_profile \
+        WAN \
+        "$wan_candidate" \
+        "$wan_destination"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: NetworkManager daemon was not modified"
+        note "phase network complete"
+
+        trap - EXIT
+        rm -rf -- "$temporary_dir"
+        return
+    fi
+
+    #
+    # Live installation path.
+    #
+    # This installs persistent profiles but deliberately does NOT
+    # activate them. Interface activation and Wi-Fi shutdown happen
+    # later, after the complete router stack has been prepared.
+    #
+    if (( NETWORK_PROFILES_CHANGED )); then
+        sudo nmcli connection reload
+        note "NetworkManager reloaded persistent profiles"
+    else
+        note "NetworkManager profiles unchanged"
+    fi
+
+    note "network profiles were not activated"
+    note "phase network complete"
+
+    trap - EXIT
+    rm -rf -- "$temporary_dir"
+}
+
+lightdm_active_count() {
+    local file="$1"
+    local key="$2"
+
+    grep -Ec \
+        "^[[:space:]]*${key}[[:space:]]*=" \
+        "$file" ||
+        true
+}
+
+lightdm_managed_count() {
+    local file="$1"
+    local key="$2"
+
+    grep -Fxc \
+        "# ${key} managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf" \
+        "$file" ||
+        true
+}
+
+validate_lightdm_autologin_state() {
+    local file="$1"
+    local key
+    local active
+    local managed
+
+    for key in \
+        autologin-user \
+        autologin-session
+    do
+        active="$(
+            lightdm_active_count \
+                "$file" \
+                "$key"
+        )"
+
+        managed="$(
+            lightdm_managed_count \
+                "$file" \
+                "$key"
+        )"
+
+        if (( active > 1 )); then
+            die "multiple active $key settings found in LightDM main configuration"
+        fi
+
+        if (( managed > 1 )); then
+            die "multiple managed $key comments found in LightDM main configuration"
+        fi
+
+        if (( active == 1 && managed == 1 )); then
+            die "both active and managed $key entries found in LightDM main configuration"
+        fi
+    done
+}
+
+normalize_lightdm_main() {
+    local source="$1"
+    local output="$2"
+
+    sed -E \
+        -e 's|^[[:space:]]*autologin-user[[:space:]]*=.*$|# autologin-user managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf|' \
+        -e 's|^[[:space:]]*autologin-session[[:space:]]*=.*$|# autologin-session managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf|' \
+        "$source" \
+        > "$output"
+}
+
+phase_lightdm() {
+    local config
+    local temporary
+    local mode
+    local owner_uid
+    local group_gid
+    local active_before
+    local active_after
+    local managed_after
+
+    note "phase: lightdm"
+
+    config="$(
+        root_path \
+            /etc/lightdm/lightdm.conf
+    )"
+
+    [[ -f "$config" ]] ||
+        die "LightDM main configuration does not exist: $config"
+
+    validate_lightdm_autologin_state "$config"
+
+    active_before="$(
+        grep -Ec \
+            '^[[:space:]]*(autologin-user|autologin-session)[[:space:]]*=' \
+            "$config" ||
+            true
+    )"
+
+    temporary="$(mktemp)"
+
+    trap 'rm -f -- "$temporary"' EXIT
+
+    normalize_lightdm_main \
+        "$config" \
+        "$temporary"
+
+    active_after="$(
+        grep -Ec \
+            '^[[:space:]]*(autologin-user|autologin-session)[[:space:]]*=' \
+            "$temporary" ||
+            true
+    )"
+
+    [[ "$active_after" == "0" ]] ||
+        die "failed to neutralize LightDM main-file autologin settings"
+
+    managed_after="$(
+        grep -Ec \
+            '^# autologin-(user|session) managed by /etc/lightdm/lightdm\.conf\.d/90-proton-router-autologin\.conf$' \
+            "$temporary" ||
+            true
+    )"
+
+    if (( active_before > 0 )); then
+        [[ "$managed_after" == "$active_before" ]] ||
+            die "LightDM managed-comment count does not match replaced settings"
+    fi
+
+    if cmp -s "$config" "$temporary"; then
+        note "LightDM main configuration already normalized"
+        note "generated autologin drop-in remains owned by proton-router-apply-conf"
+        note "phase lightdm complete"
+
+        trap - EXIT
+        rm -f -- "$temporary"
+        return
+    fi
+
+    mode="$(stat -c '%a' "$config")"
+    owner_uid="$(stat -c '%u' "$config")"
+    group_gid="$(stat -c '%g' "$config")"
+
+    run_root install \
+        -o "$owner_uid" \
+        -g "$group_gid" \
+        -m "$mode" \
+        "$temporary" \
+        "$config"
+
+    validate_lightdm_autologin_state "$config"
+
+    active_after="$(
+        grep -Ec \
+            '^[[:space:]]*(autologin-user|autologin-session)[[:space:]]*=' \
+            "$config" ||
+            true
+    )"
+
+    [[ "$active_after" == "0" ]] ||
+        die "LightDM main configuration still contains active autologin settings"
+
+    note "neutralized $active_before LightDM autologin setting(s)"
+    note "generated autologin drop-in remains owned by proton-router-apply-conf"
+    note "phase lightdm complete"
+
+    trap - EXIT
+    rm -f -- "$temporary"
+}
+
+keyring_existing_marker() {
+    local keyring_dir="$1"
+
+    [[ -d "$keyring_dir" ]] ||
+        return 1
+
+    if [[ -e "$keyring_dir/default" ]]; then
+        return 0
+    fi
+
+    find "$keyring_dir" \
+        -maxdepth 1 \
+        -type f \
+        -name '*.keyring' \
+        -print -quit \
+        2>/dev/null |
+        grep -q .
+}
+
+phase_keyring() {
+    local initializer
+    local target_home
+    local keyring_dir
+    local router_uid
+    local router_gid
+    local preexisting=0
+    local directory_mode
+    local directory_uid
+    local directory_gid
+
+    note "phase: keyring"
+
+    collect_router_config
+    validate_router_config
+    resolve_router_home
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    router_gid="$(id -g "$ROUTER_USER")"
+
+    initializer="$(
+        root_path \
+            /usr/local/sbin/proton-keyring-init
+    )"
+
+    [[ -f "$initializer" ]] ||
+        die "installed keyring initializer is missing: $initializer"
+
+    [[ -x "$initializer" ]] ||
+        die "installed keyring initializer is not executable: $initializer"
+
+    if [[ "$TARGET_ROOT" == "/" ]]; then
+        target_home="$ROUTER_HOME"
+
+        [[ -d "$target_home" ]] ||
+            die "router home does not exist: $target_home"
+    else
+        target_home="$TARGET_ROOT$ROUTER_HOME"
+
+        run_root install \
+            -d \
+            -o "$router_uid" \
+            -g "$router_gid" \
+            -m 0700 \
+            "$target_home"
+
+        note "staging keyring HOME: $target_home"
+    fi
+
+    keyring_dir="$target_home/.local/share/keyrings"
+
+    if keyring_existing_marker "$keyring_dir"; then
+        preexisting=1
+        note "existing keyring state detected; initializer must preserve it"
+    else
+        note "no existing keyring state detected"
+    fi
+
+    sudo \
+        -u "$ROUTER_USER" \
+        env \
+        HOME="$target_home" \
+        "$initializer"
+
+    [[ -d "$keyring_dir" ]] ||
+        die "keyring directory was not created"
+
+    directory_mode="$(stat -c '%a' "$keyring_dir")"
+    directory_uid="$(stat -c '%u' "$keyring_dir")"
+    directory_gid="$(stat -c '%g' "$keyring_dir")"
+
+    [[ "$directory_mode" == "700" ]] ||
+        die "keyring directory mode is not 700"
+
+    [[ "$directory_uid" == "$router_uid" ]] ||
+        die "keyring directory is not owned by $ROUTER_USER"
+
+    [[ "$directory_gid" == "$router_gid" ]] ||
+        die "keyring directory group is not the router user's primary group"
+
+    if (( preexisting )); then
+        note "existing keyring state preserved"
+    else
+        [[ -s "$keyring_dir/login.keyring" ]] ||
+            die "fresh keyring initialization did not create login.keyring"
+
+        [[ "$(stat -c '%a' "$keyring_dir/login.keyring")" == "600" ]] ||
+            die "login.keyring mode is not 600"
+
+        [[ "$(stat -c '%u' "$keyring_dir/login.keyring")" == "$router_uid" ]] ||
+            die "login.keyring is not owned by $ROUTER_USER"
+
+        [[ "$(stat -c '%g' "$keyring_dir/login.keyring")" == "$router_gid" ]] ||
+            die "login.keyring group is not the router user's primary group"
+
+        note "fresh login keyring verified"
+    fi
+
+    note "phase keyring complete"
+}
+
+phase_apply() {
+    local generator
+    local config_file
+
+    note "phase: apply"
+
+    generator="$(
+        root_path \
+            /usr/local/sbin/proton-router-apply-conf
+    )"
+
+    config_file="$(
+        root_path \
+            /etc/proton-router.conf
+    )"
+
+    [[ -f "$config_file" ]] ||
+        die "router configuration is missing: $config_file"
+
+    [[ -f "$generator" ]] ||
+        die "installed configuration generator is missing: $generator"
+
+    [[ -x "$generator" ]] ||
+        die "installed configuration generator is not executable: $generator"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: generating configuration without live application"
+
+        run_root \
+            "$generator" \
+            --root "$TARGET_ROOT" \
+            --generate-only
+
+        note "phase apply complete"
+        return
+    fi
+
+    note "applying router configuration to live system"
+
+    run_root \
+        "$generator"
+
+    note "phase apply complete"
+}
+
+preflight_enablement_link() {
+    local canonical_link="$1"
+    local link_path
+
+    link_path="$(root_path "$canonical_link")"
+
+    if [[ -e "$link_path" && ! -L "$link_path" ]]; then
+        die "enablement path exists and is not a symlink: $link_path"
+    fi
+}
+
+ensure_enablement_link() {
+    local canonical_link="$1"
+    local canonical_target="$2"
+    local owner_uid="$3"
+    local owner_gid="$4"
+
+    local link_path
+    local parent_dir
+    local current_target
+    local current_uid
+    local current_gid
+
+    link_path="$(root_path "$canonical_link")"
+    parent_dir="$(dirname "$link_path")"
+
+    run_root install \
+        -d \
+        -o "$owner_uid" \
+        -g "$owner_gid" \
+        -m 0755 \
+        "$parent_dir"
+
+    if [[ -L "$link_path" ]]; then
+        current_target="$(readlink "$link_path")"
+
+        if [[ "$current_target" == "$canonical_target" ]]; then
+            current_uid="$(stat -c '%u' "$link_path")"
+            current_gid="$(stat -c '%g' "$link_path")"
+
+            if [[ "$current_uid" != "$owner_uid" ||
+                  "$current_gid" != "$owner_gid" ]]
+            then
+                run_root chown \
+                    -h \
+                    "$owner_uid:$owner_gid" \
+                    "$link_path"
+            fi
+
+            note "enablement link already correct: $canonical_link"
+            return
+        fi
+
+        note "repairing enablement link: $canonical_link"
+        run_root rm -f "$link_path"
+    fi
+
+    run_root ln \
+        -s \
+        "$canonical_target" \
+        "$link_path"
+
+    run_root chown \
+        -h \
+        "$owner_uid:$owner_gid" \
+        "$link_path"
+
+    note "enabled $canonical_link"
+}
+
+phase_services() {
+    local router_uid
+    local router_gid
+
+    local system_unit
+    local autoconnect_unit
+    local web_unit
+
+    local system_link
+    local autoconnect_link
+    local web_link
+
+    local system_target
+    local autoconnect_target
+    local web_target
+
+    note "phase: services"
+
+    collect_router_config
+    validate_router_config
+    resolve_router_home
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    router_gid="$(id -g "$ROUTER_USER")"
+
+    system_target="/etc/systemd/system/proton-keyring-init.service"
+    autoconnect_target="$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service"
+    web_target="$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+
+    system_link="/etc/systemd/system/graphical.target.wants/proton-keyring-init.service"
+    autoconnect_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/protonvpn-autoconnect.service"
+    web_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service"
+
+    system_unit="$(root_path "$system_target")"
+    autoconnect_unit="$(root_path "$autoconnect_target")"
+    web_unit="$(root_path "$web_target")"
+
+    [[ -f "$system_unit" ]] ||
+        die "generated keyring service is missing: $system_unit"
+
+    [[ -f "$autoconnect_unit" ]] ||
+        die "autoconnect user service is missing: $autoconnect_unit"
+
+    [[ -f "$web_unit" ]] ||
+        die "web user service is missing: $web_unit"
+
+    # Refuse non-symlink collisions before changing any enablement state.
+    preflight_enablement_link "$system_link"
+    preflight_enablement_link "$autoconnect_link"
+    preflight_enablement_link "$web_link"
+
+    ensure_enablement_link \
+        "$system_link" \
+        "$system_target" \
+        0 \
+        0
+
+    ensure_enablement_link \
+        "$autoconnect_link" \
+        "$autoconnect_target" \
+        "$router_uid" \
+        "$router_gid"
+
+    ensure_enablement_link \
+        "$web_link" \
+        "$web_target" \
+        "$router_uid" \
+        "$router_gid"
+
+    note "service enablement links installed"
+    note "services were not started or restarted"
+    note "phase services complete"
+}
+
+collect_proton_username() {
+    local value
+
+    value="$PROTON_USERNAME_ARG"
+
+    if [[ -z "$value" ]]; then
+        if (( NON_INTERACTIVE )); then
+            die "--proton-username is required for the proton phase in non-interactive mode"
+        fi
+
+        printf 'Proton account username or email: '
+        read -r value
+    fi
+
+    [[ -n "$value" ]] ||
+        die "Proton username must not be empty"
+
+    [[ "$value" != -* ]] ||
+        die "invalid Proton username: must not begin with '-'"
+
+    [[ "$value" =~ ^[^[:space:][:cntrl:]]+$ ]] ||
+        die "invalid Proton username: whitespace/control characters are not allowed"
+
+    (( ${#value} <= 254 )) ||
+        die "invalid Proton username: value is too long"
+
+    PROTON_USERNAME="$value"
+}
+
+run_router_user_bus() {
+    local router_uid
+    local runtime_dir
+    local bus_address
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    runtime_dir="/run/user/$router_uid"
+    bus_address="unix:path=$runtime_dir/bus"
+
+    sudo \
+        -u "$ROUTER_USER" \
+        env \
+        HOME="$ROUTER_HOME" \
+        USER="$ROUTER_USER" \
+        LOGNAME="$ROUTER_USER" \
+        XDG_RUNTIME_DIR="$runtime_dir" \
+        DBUS_SESSION_BUS_ADDRESS="$bus_address" \
+        "$@"
+}
+
+provision_proton_live() (
+    local bootstrap_open=0
+    local status_output
+    local config_output
+    local kill_switch
+    local ipv6
+
+    close_bootstrap() {
+        if (( bootstrap_open )); then
+            sudo /usr/sbin/nft \
+                flush chain inet router_filter host_wan_bootstrap \
+                >/dev/null 2>&1 || true
+
+            bootstrap_open=0
+        fi
+    }
+
+    trap close_bootstrap EXIT HUP INT TERM
+
+    # Begin from a known fail-closed state.
+    run_root /usr/sbin/nft \
+        flush chain inet router_filter host_wan_bootstrap
+
+    # Only the router host receives this temporary bootstrap opening.
+    run_root /usr/sbin/nft \
+        add rule inet router_filter host_wan_bootstrap accept
+
+    bootstrap_open=1
+
+    # `protonvpn status` can report Disconnected even when the
+    # stored session is no longer authenticated. `config list` requires a
+    # valid authenticated Proton session and is therefore the real probe.
+    if run_router_user_bus \
+        /usr/bin/protonvpn config list \
+        >/dev/null 2>&1
+    then
+        note "authenticated Proton session detected; sign-in skipped"
+    else
+        if (( NON_INTERACTIVE )); then
+            die "Proton sign-in is required; rerun the proton phase without --non-interactive so Proton can prompt for the account password"
+        fi
+
+        note "starting interactive Proton sign-in"
+
+        run_router_user_bus \
+            /usr/bin/protonvpn \
+            signin \
+            "$PROTON_USERNAME"
+    fi
+
+    config_output="$(
+        run_router_user_bus \
+            /usr/bin/protonvpn \
+            config list
+    )"
+
+    kill_switch="$(
+        awk '
+            $1 == "kill-switch" {
+                print $2
+                exit
+            }
+        ' <<< "$config_output"
+    )"
+
+    ipv6="$(
+        awk '
+            $1 == "ipv6" {
+                print $2
+                exit
+            }
+        ' <<< "$config_output"
+    )"
+
+    if [[ "$kill_switch" != "standard" ]]; then
+        note "setting Proton kill switch to standard"
+
+        run_router_user_bus \
+            /usr/bin/protonvpn \
+            config set kill-switch standard
+    else
+        note "Proton kill switch already standard"
+    fi
+
+    if [[ "$ipv6" != "off" ]]; then
+        note "disabling Proton IPv6"
+
+        run_router_user_bus \
+            /usr/bin/protonvpn \
+            config set ipv6 off
+    else
+        note "Proton IPv6 already disabled"
+    fi
+
+    config_output="$(
+        run_router_user_bus \
+            /usr/bin/protonvpn \
+            config list
+    )"
+
+    kill_switch="$(
+        awk '
+            $1 == "kill-switch" {
+                print $2
+                exit
+            }
+        ' <<< "$config_output"
+    )"
+
+    ipv6="$(
+        awk '
+            $1 == "ipv6" {
+                print $2
+                exit
+            }
+        ' <<< "$config_output"
+    )"
+
+    [[ "$kill_switch" == "standard" ]] ||
+        die "Proton kill-switch verification failed: $kill_switch"
+
+    [[ "$ipv6" == "off" ]] ||
+        die "Proton IPv6 verification failed: $ipv6"
+
+    # Close explicitly on success. The trap is the failure fallback.
+    run_root /usr/sbin/nft \
+        flush chain inet router_filter host_wan_bootstrap
+
+    bootstrap_open=0
+
+    trap - EXIT HUP INT TERM
+
+    note "Proton settings verified"
+    note "bootstrap firewall closed"
+    note "Proton connection was not started"
+)
+
+phase_proton() {
+    local config_file
+    local autoconnect_helper
+    local generated_nft
+    local keyring_dir
+
+    local router_uid
+    local runtime_dir
+    local bus_socket
+    local secret_owner
+
+    note "phase: proton"
+
+    load_answers
+    collect_router_config
+    validate_router_config
+    resolve_router_home
+    collect_proton_username
+
+    config_file="$(root_path /etc/proton-router.conf)"
+    autoconnect_helper="$(
+        root_path \
+            "$ROUTER_HOME/.local/bin/protonvpn-autoconnect"
+    )"
+    generated_nft="$(
+        root_path \
+            /etc/nftables.d/generated-vars.nft
+    )"
+    keyring_dir="$(
+        root_path \
+            "$ROUTER_HOME/.local/share/keyrings"
+    )"
+
+    [[ -f "$config_file" ]] ||
+        die "router configuration is missing: $config_file"
+
+    [[ -x "$autoconnect_helper" ]] ||
+        die "Proton autoconnect helper is missing or not executable: $autoconnect_helper"
+
+    [[ -f "$generated_nft" ]] ||
+        die "generated nftables variables are missing: $generated_nft"
+
+    keyring_existing_marker "$keyring_dir" ||
+        die "router user keyring has not been initialized: $keyring_dir"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: Proton provisioning prerequisites verified"
+        note "staging mode: protonvpn was not invoked"
+        note "staging mode: firewall and keyring state were not modified"
+        note "desired Proton settings: kill-switch=standard ipv6=off"
+        note "phase proton complete"
+        return
+    fi
+
+    [[ -x /usr/bin/protonvpn ]] ||
+        die "Proton CLI is not installed: /usr/bin/protonvpn"
+
+    [[ -x /usr/bin/gdbus ]] ||
+        die "gdbus is not installed: /usr/bin/gdbus"
+
+    [[ -x /usr/sbin/nft ]] ||
+        die "nft is not installed: /usr/sbin/nft"
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    runtime_dir="/run/user/$router_uid"
+    bus_socket="$runtime_dir/bus"
+
+    [[ -d "$runtime_dir" ]] ||
+        die "router user runtime directory is unavailable: $runtime_dir"
+
+    [[ -S "$bus_socket" ]] ||
+        die "router user D-Bus socket is unavailable: $bus_socket"
+
+    secret_owner="$(
+        run_router_user_bus \
+            /usr/bin/gdbus call \
+            --session \
+            --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner \
+            org.freedesktop.secrets
+    )"
+
+    [[ "$secret_owner" == "(true,)" ]] ||
+        die "Secret Service is unavailable for $ROUTER_USER"
+
+    run_root /usr/sbin/nft \
+        list chain inet router_filter host_wan_bootstrap \
+        >/dev/null ||
+        die "host_wan_bootstrap nftables chain is unavailable"
+
+    provision_proton_live
+
+    note "phase proton complete"
+}
+
+nm_profile_uuid() {
+    local profile="$1"
+
+    awk -F= '
+        $1 == "uuid" {
+            print $2
+            exit
+        }
+    ' "$profile"
+}
+
+active_connection_uuid() {
+    local interface="$1"
+
+    nmcli \
+        -g GENERAL.CON-UUID \
+        device show "$interface" \
+        2>/dev/null |
+    head -n 1
+}
+
+validate_router_ethernet_device_scope() {
+    local device
+    local type
+
+    local lan_found=0
+    local wan_found=0
+    local -a unexpected_devices=()
+
+    detect_router_port_roles
+
+    [[ "$LAN_IF" == "$DETECTED_LAN_IF" ]] ||
+        die "configured LAN does not match the Raspberry Pi built-in RJ45"
+
+    [[ "$WAN_IF" == "$DETECTED_WAN_IF" ]] ||
+        die "configured WAN does not match the Waveshare PCIe Realtek RJ45"
+
+    while IFS=: read -r device type; do
+        [[ "$type" == "ethernet" ]] ||
+            continue
+
+        case "$device" in
+            "$LAN_IF")
+                lan_found=1
+                ;;
+
+            "$WAN_IF")
+                wan_found=1
+                ;;
+
+            *)
+                unexpected_devices+=("$device")
+                ;;
+        esac
+    done < <(
+        nmcli \
+            -t \
+            --escape no \
+            -f DEVICE,TYPE \
+            device status
+    )
+
+    (( lan_found )) ||
+        die "NetworkManager does not identify $LAN_IF as Ethernet"
+
+    (( wan_found )) ||
+        die "NetworkManager does not identify $WAN_IF as Ethernet"
+
+    if ((${#unexpected_devices[@]})); then
+        die "unexpected additional Ethernet device(s): ${unexpected_devices[*]}"
+    fi
+
+    note "Ethernet device scope verified: $LAN_IF $WAN_IF"
+}
+
+remove_competing_ethernet_profiles() {
+    local lan_uuid="$1"
+    local wan_uuid="$2"
+
+    local uuid
+    local type
+    local name
+    local interface_name
+
+    while IFS=: read -r uuid type; do
+        [[ -n "$uuid" ]] ||
+            continue
+
+        case "$type" in
+            ethernet|802-3-ethernet)
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        if [[ "$uuid" == "$lan_uuid" ||
+              "$uuid" == "$wan_uuid" ]]
+        then
+            continue
+        fi
+
+        name="$(
+            nmcli \
+                -g connection.id \
+                connection show uuid "$uuid" \
+                2>/dev/null ||
+            true
+        )"
+
+        interface_name="$(
+            nmcli \
+                -g connection.interface-name \
+                connection show uuid "$uuid" \
+                2>/dev/null ||
+            true
+        )"
+
+        #
+        # An Ethernet profile can compete with this router only if it is
+        # explicitly bound to LAN_IF/WAN_IF or is generic/unbound.
+        #
+        case "$interface_name" in
+            ""|"$LAN_IF"|"$WAN_IF")
+                note "removing competing Ethernet profile: ${name:-$uuid}"
+
+                run_root nmcli \
+                    connection delete uuid "$uuid"
+                ;;
+
+            *)
+                note "leaving non-router Ethernet profile unchanged: ${name:-$uuid} ($interface_name)"
+                ;;
+        esac
+    done < <(
+        nmcli \
+            -t \
+            --escape no \
+            -f UUID,TYPE \
+            connection show
+    )
+}
+
+phase_cutover() {
+    local lan_profile
+    local wan_profile
+
+    local validation_dir
+    local lan_validation
+    local wan_validation
+
+    local lan_uuid
+    local wan_uuid
+
+    local active_lan_uuid
+    local active_wan_uuid
+
+    note "phase: cutover"
+
+    require_host_command nmcli
+    require_host_command ip
+
+    collect_router_config
+    validate_router_config
+
+    lan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/LAN.nmconnection
+    )"
+
+    wan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/WAN.nmconnection
+    )"
+
+    [[ -f "$lan_profile" ]] ||
+        die "LAN NetworkManager profile is missing: $lan_profile"
+
+    [[ -f "$wan_profile" ]] ||
+        die "WAN NetworkManager profile is missing: $wan_profile"
+
+    # Installed NetworkManager keyfiles are intentionally root:root 0600.
+    # Read them through sudo into private temporary copies so the existing
+    # profile validator can inspect them without weakening their metadata.
+    validation_dir="$(mktemp -d)"
+    trap 'rm -rf -- "$validation_dir"' EXIT
+
+    lan_validation="$validation_dir/LAN.nmconnection"
+    wan_validation="$validation_dir/WAN.nmconnection"
+
+    run_root cat "$lan_profile" > "$lan_validation"
+    run_root cat "$wan_profile" > "$wan_validation"
+
+    chmod 0600         "$lan_validation"         "$wan_validation"
+
+    validate_nm_profile LAN "$lan_validation"
+    validate_nm_profile WAN "$wan_validation"
+
+    lan_uuid="$(nm_profile_uuid "$lan_validation")"
+    wan_uuid="$(nm_profile_uuid "$wan_validation")"
+
+    [[ "$lan_uuid" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+        die "LAN NetworkManager profile has invalid UUID"
+
+    [[ "$wan_uuid" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+        die "WAN NetworkManager profile has invalid UUID"
+
+    [[ "$lan_uuid" != "$wan_uuid" ]] ||
+        die "LAN and WAN NetworkManager profiles have the same UUID"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: LAN/WAN cutover prerequisites verified"
+        note "staging mode: NetworkManager connections were not activated"
+        note "staging mode: competing Ethernet profiles were not modified"
+        note "staging mode: Wi-Fi state was not modified"
+
+        trap - EXIT
+        rm -rf -- "$validation_dir"
+
+        note "phase cutover complete"
+        return
+    fi
+
+    (( ALLOW_NETWORK_CUTOVER )) ||
+        die "live cutover requires --allow-network-cutover"
+
+    [[ -e "/sys/class/net/$LAN_IF" ]] ||
+        die "LAN interface does not exist: $LAN_IF"
+
+    [[ -e "/sys/class/net/$WAN_IF" ]] ||
+        die "WAN interface does not exist: $WAN_IF"
+
+    validate_router_ethernet_device_scope
+
+    note "reloading NetworkManager connection profiles"
+
+    run_root nmcli \
+        connection reload
+
+    note "activating WAN profile on $WAN_IF"
+
+    run_root nmcli \
+        connection up uuid "$wan_uuid" \
+        ifname "$WAN_IF"
+
+    active_wan_uuid="$(active_connection_uuid "$WAN_IF")"
+
+    [[ "$active_wan_uuid" == "$wan_uuid" ]] ||
+        die "WAN activation verification failed"
+
+    ip -4 route show default dev "$WAN_IF" |
+        grep -q . ||
+        die "WAN has no IPv4 default route after activation"
+
+    note "WAN profile active with IPv4 default route"
+
+    note "activating LAN profile on $LAN_IF"
+
+    run_root nmcli \
+        connection up uuid "$lan_uuid" \
+        ifname "$LAN_IF"
+
+    active_lan_uuid="$(active_connection_uuid "$LAN_IF")"
+
+    [[ "$active_lan_uuid" == "$lan_uuid" ]] ||
+        die "LAN activation verification failed"
+
+    ip -4 -o addr show dev "$LAN_IF" |
+        awk '{print $4}' |
+        grep -Fxq "$LAN_ADDR/$LAN_PREFIX" ||
+        die "LAN address verification failed after activation"
+
+    note "LAN profile active with $LAN_ADDR/$LAN_PREFIX"
+
+    remove_competing_ethernet_profiles \
+        "$lan_uuid" \
+        "$wan_uuid"
+
+    active_lan_uuid="$(active_connection_uuid "$LAN_IF")"
+    active_wan_uuid="$(active_connection_uuid "$WAN_IF")"
+
+    [[ "$active_lan_uuid" == "$lan_uuid" ]] ||
+        die "LAN profile changed after Ethernet cleanup"
+
+    [[ "$active_wan_uuid" == "$wan_uuid" ]] ||
+        die "WAN profile changed after Ethernet cleanup"
+
+    trap - EXIT
+    rm -rf -- "$validation_dir"
+
+    note "competing Ethernet profiles removed"
+    note "Wi-Fi was intentionally left unchanged"
+    note "phase cutover complete"
+}
+
+phase_wifi() {
+    local lan_profile
+    local wan_profile
+    local validation_dir
+    local lan_validation
+    local wan_validation
+
+    local lan_connection
+    local wan_connection
+    local wifi_state
+
+    local ssh_client
+    local ssh_route
+
+    note "phase: wifi"
+
+    require_host_command nmcli
+    require_host_command ip
+
+    collect_router_config
+    validate_router_config
+
+    lan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/LAN.nmconnection
+    )"
+
+    wan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/WAN.nmconnection
+    )"
+
+    [[ -f "$lan_profile" ]] ||
+        die "LAN NetworkManager profile is missing: $lan_profile"
+
+    [[ -f "$wan_profile" ]] ||
+        die "WAN NetworkManager profile is missing: $wan_profile"
+
+    # Installed NetworkManager profiles are root:root 0600.
+    # Validate private temporary copies without weakening the originals.
+    validation_dir="$(mktemp -d)"
+    trap 'rm -rf -- "$validation_dir"' EXIT
+
+    lan_validation="$validation_dir/LAN.nmconnection"
+    wan_validation="$validation_dir/WAN.nmconnection"
+
+    run_root cat "$lan_profile" > "$lan_validation"
+    run_root cat "$wan_profile" > "$wan_validation"
+
+    chmod 0600 \
+        "$lan_validation" \
+        "$wan_validation"
+
+    validate_nm_profile LAN "$lan_validation"
+    validate_nm_profile WAN "$wan_validation"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: Ethernet prerequisites verified"
+        note "staging mode: Wi-Fi radio was not modified"
+
+        trap - EXIT
+        rm -rf -- "$validation_dir"
+
+        note "phase wifi complete"
+        return
+    fi
+
+    (( ALLOW_WIFI_DISABLE )) ||
+        die "live Wi-Fi shutdown requires --allow-wifi-disable"
+
+    lan_connection="$(
+        nmcli \
+            -g GENERAL.CONNECTION \
+            device show "$LAN_IF" \
+            2>/dev/null |
+        head -n 1
+    )"
+
+    wan_connection="$(
+        nmcli \
+            -g GENERAL.CONNECTION \
+            device show "$WAN_IF" \
+            2>/dev/null |
+        head -n 1
+    )"
+
+    [[ "$lan_connection" == "LAN" ]] ||
+        die "LAN profile is not active on $LAN_IF"
+
+    [[ "$wan_connection" == "WAN" ]] ||
+        die "WAN profile is not active on $WAN_IF"
+
+    ip -4 -o addr show dev "$LAN_IF" |
+        awk '{print $4}' |
+        grep -Fxq "$LAN_ADDR/$LAN_PREFIX" ||
+        die "configured LAN address is not active on $LAN_IF"
+
+    if [[ -n "${SSH_CONNECTION:-}" ]]; then
+        ssh_client="${SSH_CONNECTION%% *}"
+
+        valid_ipv4 "$ssh_client" ||
+            die "SSH client is not IPv4; refusing to disable Wi-Fi"
+
+        ssh_route="$(
+            ip -4 route get "$ssh_client" \
+                2>/dev/null |
+            head -n 1 ||
+            true
+        )"
+
+        [[ -n "$ssh_route" ]] ||
+            die "could not determine route to SSH client $ssh_client"
+
+        grep -Eq \
+            "(^|[[:space:]])dev[[:space:]]+$LAN_IF([[:space:]]|$)" \
+            <<< "$ssh_route" ||
+            die "SSH client $ssh_client is not reached through $LAN_IF; refusing to disable Wi-Fi"
+
+        note "SSH administration path verified through $LAN_IF"
+    fi
+
+    wifi_state="$(nmcli radio wifi)"
+
+    case "$wifi_state" in
+        disabled)
+            note "Wi-Fi radio already disabled"
+            ;;
+
+        enabled)
+            note "disabling Wi-Fi radio"
+
+            run_root nmcli radio wifi off
+            ;;
+
+        *)
+            die "unexpected Wi-Fi radio state: $wifi_state"
+            ;;
+    esac
+
+    [[ "$(nmcli radio wifi)" == "disabled" ]] ||
+        die "Wi-Fi radio did not remain disabled"
+
+    if sudo test -f /var/lib/NetworkManager/NetworkManager.state; then
+        sudo grep -qx \
+            'WirelessEnabled=false' \
+            /var/lib/NetworkManager/NetworkManager.state ||
+            die "NetworkManager did not persist WirelessEnabled=false"
+    else
+        die "NetworkManager state file is missing"
+    fi
+
+    trap - EXIT
+    rm -rf -- "$validation_dir"
+
+    note "Wi-Fi radio disabled and persistent"
+    note "phase wifi complete"
+}
+
+phase_boot_services() {
+    local units=(
+        NetworkManager.service
+        NetworkManager-wait-online.service
+        nftables.service
+        dnsmasq.service
+        lightdm.service
+    )
+
+    local unit
+    local state
+
+    note "phase: boot-services"
+
+    require_host_command systemctl
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: package-owned boot-service plan verified"
+
+        for unit in "${units[@]}"; do
+            note "staging mode: would enable $unit"
+        done
+
+        note "staging mode: systemd enablement was not modified"
+        note "phase boot-services complete"
+        return
+    fi
+
+    for unit in "${units[@]}"; do
+        systemctl cat "$unit" >/dev/null 2>&1 ||
+            die "required systemd unit is unavailable: $unit"
+    done
+
+    for unit in "${units[@]}"; do
+        note "enabling $unit"
+
+        run_root systemctl enable "$unit"
+
+        state="$(
+            systemctl is-enabled "$unit" \
+                2>/dev/null ||
+            true
+        )"
+
+        [[ "$state" == "enabled" ]] ||
+            die "$unit enablement verification failed: $state"
+    done
+
+    note "package-owned boot services verified enabled"
+    note "runtime service state was left unchanged"
+    note "phase boot-services complete"
+}
+
+managed_connect_live() (
+    local helper="$1"
+    local router_uid
+    local runtime_dir
+    local bus_socket
+    local secret_owner
+    local wan_connection
+    local status_output
+    local proton_type
+
+    # Belt-and-suspenders closure around the helper's own trap.
+    close_bootstrap() {
+        sudo /usr/sbin/nft \
+            flush chain inet router_filter host_wan_bootstrap \
+            >/dev/null 2>&1 || true
+    }
+
+    trap close_bootstrap EXIT HUP INT TERM
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    runtime_dir="/run/user/$router_uid"
+    bus_socket="$runtime_dir/bus"
+
+    [[ -d "$runtime_dir" ]] ||
+        die "router user runtime directory is unavailable: $runtime_dir"
+
+    [[ -S "$bus_socket" ]] ||
+        die "router user D-Bus socket is unavailable: $bus_socket"
+
+    secret_owner="$(
+        run_router_user_bus \
+            /usr/bin/gdbus call \
+            --session \
+            --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner \
+            org.freedesktop.secrets
+    )"
+
+    [[ "$secret_owner" == "(true,)" ]] ||
+        die "Secret Service is unavailable for $ROUTER_USER"
+
+    wan_connection="$(
+        nmcli \
+            -g GENERAL.CONNECTION \
+            device show "$WAN_IF" \
+            2>/dev/null |
+        head -n 1
+    )"
+
+    [[ "$wan_connection" == "WAN" ]] ||
+        die "WAN profile is not active on $WAN_IF"
+
+    ip -4 route show default dev "$WAN_IF" |
+        grep -q . ||
+        die "WAN has no IPv4 default route"
+
+    run_root /usr/sbin/nft \
+        list chain inet router_filter host_wan_bootstrap \
+        >/dev/null ||
+        die "host_wan_bootstrap nftables chain is unavailable"
+
+    # Always begin fail-closed.
+    close_bootstrap
+
+    note "running managed Proton connection helper"
+
+    run_router_user_bus \
+        "$helper"
+
+    status_output="$(
+        run_router_user_bus \
+            /usr/bin/protonvpn status \
+            2>&1
+    )"
+
+    grep -q '^Status: Connected' \
+        <<< "$status_output" ||
+        die "Proton did not report Connected after managed connection"
+
+    [[ -e /sys/class/net/proton0 ]] ||
+        die "proton0 interface is missing after connection"
+
+    proton_type="$(
+        nmcli \
+            -g GENERAL.TYPE \
+            device show proton0 \
+            2>/dev/null |
+        head -n 1
+    )"
+
+    [[ "$proton_type" == "wireguard" ]] ||
+        die "proton0 is not a WireGuard device: $proton_type"
+
+    # The helper must leave the bootstrap gate closed.
+    if run_root /usr/sbin/nft -a \
+        list chain inet router_filter host_wan_bootstrap |
+       grep -Eq '^[[:space:]]+accept([[:space:]]|$)'
+    then
+        die "host_wan_bootstrap remained open after managed connection"
+    fi
+
+    close_bootstrap
+
+    trap - EXIT HUP INT TERM
+
+    note "Proton managed connection verified"
+    note "proton0 WireGuard interface verified"
+    note "bootstrap firewall verified closed"
+)
+
+phase_managed_connect() {
+    local config_file
+    local helper
+    local nft_vars
+    local sudoers_file
+    local keyring_dir
+
+    note "phase: managed-connect"
+
+    require_host_command nmcli
+    require_host_command ip
+
+    collect_router_config
+    validate_router_config
+    resolve_router_home
+
+    config_file="$(root_path /etc/proton-router.conf)"
+
+    helper="$(
+        root_path \
+            "$ROUTER_HOME/.local/bin/protonvpn-autoconnect"
+    )"
+
+    nft_vars="$(
+        root_path \
+            /etc/nftables.d/generated-vars.nft
+    )"
+
+    sudoers_file="$(
+        root_path \
+            /etc/sudoers.d/protonvpn-bootstrap
+    )"
+
+    keyring_dir="$(
+        root_path \
+            "$ROUTER_HOME/.local/share/keyrings"
+    )"
+
+    [[ -f "$config_file" ]] ||
+        die "router configuration is missing: $config_file"
+
+    [[ -x "$helper" ]] ||
+        die "Proton autoconnect helper is missing or not executable: $helper"
+
+    [[ -f "$nft_vars" ]] ||
+        die "generated nftables variables are missing: $nft_vars"
+
+    [[ -f "$sudoers_file" ]] ||
+        die "generated Proton sudoers file is missing: $sudoers_file"
+
+    keyring_existing_marker "$keyring_dir" ||
+        die "router user keyring has not been initialized: $keyring_dir"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: managed-connection prerequisites verified"
+        note "staging mode: Proton connection helper was not executed"
+        note "staging mode: firewall and network state were not modified"
+        note "phase managed-connect complete"
+        return
+    fi
+
+    [[ -x /usr/bin/protonvpn ]] ||
+        die "Proton CLI is not installed: /usr/bin/protonvpn"
+
+    [[ -x /usr/bin/gdbus ]] ||
+        die "gdbus is not installed: /usr/bin/gdbus"
+
+    [[ -x /usr/sbin/nft ]] ||
+        die "nft is not installed: /usr/sbin/nft"
+
+    managed_connect_live "$helper"
+
+    note "phase managed-connect complete"
+}
+
+reboot_checkpoint_path() {
+    root_path \
+        /var/lib/proton-router-setup/reboot-required.boot-id
+}
+
+write_reboot_checkpoint() {
+    local checkpoint
+    local value
+    local temporary
+
+    checkpoint="$(reboot_checkpoint_path)"
+
+    if [[ "$TARGET_ROOT" == "/" ]]; then
+        [[ -r /proc/sys/kernel/random/boot_id ]] ||
+            die "kernel boot ID is unavailable"
+
+        value="$(
+            cat /proc/sys/kernel/random/boot_id
+        )"
+
+        [[ "$value" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+            die "kernel boot ID has unexpected format: $value"
+    else
+        value="STAGING"
+    fi
+
+    temporary="$(mktemp)"
+
+    printf '%s\n' "$value" > "$temporary"
+
+    if ! run_root install \
+        -D \
+        -o root \
+        -g root \
+        -m 0600 \
+        "$temporary" \
+        "$checkpoint"
+    then
+        rm -f -- "$temporary"
+        die "failed to write reboot checkpoint"
+    fi
+
+    rm -f -- "$temporary"
+
+    note "reboot checkpoint written"
+}
+
+verify_reboot_checkpoint() {
+    local checkpoint
+    local recorded
+    local current
+
+    checkpoint="$(reboot_checkpoint_path)"
+
+    [[ -f "$checkpoint" ]] ||
+        die "reboot checkpoint is missing; required prior stage has not completed"
+
+    recorded="$(
+        run_root cat "$checkpoint"
+    )"
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        [[ "$recorded" == "STAGING" ]] ||
+            die "staging reboot checkpoint is invalid"
+
+        note "staging reboot checkpoint verified"
+        return
+    fi
+
+    [[ "$recorded" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+        die "reboot checkpoint has invalid boot ID"
+
+    [[ -r /proc/sys/kernel/random/boot_id ]] ||
+        die "current kernel boot ID is unavailable"
+
+    current="$(
+        cat /proc/sys/kernel/random/boot_id
+    )"
+
+    [[ "$current" =~ ^[0-9A-Fa-f-]{36}$ ]] ||
+        die "current kernel boot ID has unexpected format"
+
+    [[ "$current" != "$recorded" ]] ||
+        die "required reboot has not occurred"
+
+    note "required reboot boundary verified"
+}
+
+select_installed_router_config() {
+    local installed
+
+    [[ -z "$ANSWERS_FILE" ]] ||
+        return
+
+    installed="$(
+        root_path \
+            /etc/proton-router.conf
+    )"
+
+    [[ -f "$installed" ]] ||
+        die "installed router configuration is missing: $installed"
+
+    ANSWERS_FILE="$installed"
+
+    note "using installed router configuration: $installed"
+}
+
+require_pre_reboot_live_acknowledgements() {
+    [[ "$TARGET_ROOT" == "/" ]] ||
+        return 0
+
+    (( ALLOW_NETWORK_CUTOVER )) ||
+        die "live pre-reboot requires explicit --allow-network-cutover"
+
+    (( ALLOW_WIFI_DISABLE )) ||
+        die "live pre-reboot requires explicit --allow-wifi-disable"
+
+    note "live pre-reboot acknowledgements verified"
+}
+
+phase_pre_reboot() (
+    note "phase: pre-reboot"
+
+    #
+    # Refuse before platform/config/files/packages or any other subphase
+    # if the two disruptive live acknowledgements are not both present.
+    #
+    require_pre_reboot_live_acknowledgements
+
+    # Audit the host before modifying the target.
+    phase_platform
+
+    # Collect/write router inputs exactly once for this invocation.
+    phase_config
+
+    # Static appliance state.
+    phase_files
+
+    phase_bypass
+    phase_boot
+
+    # Repository and packages before the fail-closed firewall.
+    phase_repository
+    phase_packages
+
+    # Persistent network and unattended desktop/keyring preparation.
+    phase_network
+    phase_lightdm
+    phase_keyring
+
+    # Activate the intended physical LAN/WAN profiles first.
+    phase_cutover
+
+    # The LAN now has its stable address. Start temporary DHCP here so the
+    # directly attached setup laptop can obtain a LAN address without a
+    # gateway or DNS route taking over its existing Internet connection.
+    enable_provisioning_dhcp
+
+    # Remove the alternate Wi-Fi path only after cutover has verified
+    # Ethernet. If an SSH session still depends on Wi-Fi, phase_wifi
+    # refuses here BEFORE the fail-closed firewall is applied. The
+    # provisioning DHCP service remains active so SSH can move to LAN.
+    phase_wifi
+
+    # Once SSH has safely moved to Ethernet, the permanent DHCP range will
+    # be generated by phase_apply. Leave only the temporary gateway/DNS
+    # suppression directives so the two configurations do not duplicate
+    # the DHCP range.
+    reduce_provisioning_dhcp_to_options_only
+
+    # Enable package-owned boot services before the firewall transition.
+    # These operations are local and do not start or restart the units.
+    phase_boot_services
+
+    # Generate/apply the permanent router configuration and fail-closed
+    # firewall only after network cutover and Wi-Fi safety checks succeed.
+    phase_apply
+
+    # Record this boot. post-reboot must observe a different boot ID.
+    write_reboot_checkpoint
+
+    note "pre-reboot stage complete"
+    note "REBOOT REQUIRED before post-reboot"
+)
+
+phase_pre_reboot_resume() (
+    note "phase: pre-reboot-resume"
+
+    # The first pre-reboot pass already completed platform setup,
+    # package installation, persistent network configuration, LAN/WAN
+    # cutover, and provisioning DHCP.
+    #
+    # This resume phase is entered only after the installer has moved
+    # its SSH session onto the already-configured LAN. Do not repeat
+    # the disruptive cutover work.
+    require_pre_reboot_live_acknowledgements
+
+    # Reload the router values written by the first pre-reboot pass.
+    select_installed_router_config
+
+    # Continue exactly where the Wi-Fi handoff gate stopped the first pass.
+    phase_wifi
+    reduce_provisioning_dhcp_to_options_only
+    phase_boot_services
+    phase_apply
+
+    # Record this boot. post-reboot must observe a different boot ID.
+    write_reboot_checkpoint
+
+    note "pre-reboot stage complete"
+    note "REBOOT REQUIRED before post-reboot"
+)
+
+enable_provisioning_dhcp() {
+    local path
+
+    path="$(
+        root_path \
+            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+    )"
+
+    run_root install \
+        -d \
+        -m 0755 \
+        "$(dirname "$path")"
+
+    printf '%s\n' \
+        '# Generated temporarily by proton-router setup.' \
+        '# Give provisioning clients a LAN address only.' \
+        '# Do not advertise this Pi as router or DNS until Proton is ready.' \
+        "interface=${LAN_IF}" \
+        "dhcp-range=${DHCP_START},${DHCP_END},${DHCP_LEASE}" \
+        "server=${DNS_UPSTREAM}" \
+        'dhcp-option=3' \
+        'dhcp-option=6' |
+    run_root tee "$path" >/dev/null
+
+    run_root chmod 0644 "$path"
+
+    if [[ "$TARGET_ROOT" == "/" ]]; then
+        require_host_command dnsmasq
+
+        run_root dnsmasq --test
+        run_root systemctl restart dnsmasq.service
+
+        run_root systemctl is-active --quiet dnsmasq.service ||
+            die "provisioning dnsmasq service failed to start"
+    fi
+
+    note "provisioning DHCP enabled: LAN address only, no gateway/DNS"
+}
+
+reduce_provisioning_dhcp_to_options_only() {
+    local path
+
+    path="$(
+        root_path \
+            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+    )"
+
+    printf '%s\n' \
+        '# Generated temporarily by proton-router setup.' \
+        '# Permanent DHCP range is now owned by generated router configuration.' \
+        '# Keep gateway/DNS suppressed until Proton is ready.' \
+        '# Keep a temporary upstream so the Pi itself retains DNS.' \
+        "server=${DNS_UPSTREAM}" \
+        'dhcp-option=3' \
+        'dhcp-option=6' |
+    run_root tee "$path" >/dev/null
+
+    run_root chmod 0644 "$path"
+
+    note "provisioning DHCP range handed off to generated router configuration"
+}
+
+disable_provisioning_dhcp() {
+    local path
+
+    path="$(
+        root_path \
+            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+    )"
+
+    run_root rm -f "$path"
+
+    if [[ "$TARGET_ROOT" == "/" ]]; then
+        if systemctl is-active --quiet dnsmasq.service; then
+            run_root systemctl restart dnsmasq.service
+        fi
+    fi
+
+    note "provisioning DHCP disabled; normal router/DNS advertisement enabled"
+}
+
+phase_post_reboot() (
+    local original_non_interactive
+
+    note "phase: post-reboot"
+
+    # Prove that the first reboot actually happened.
+    verify_reboot_checkpoint
+
+    # Resume from the configuration installed by pre-reboot unless the
+    # caller explicitly supplied another answers file.
+    select_installed_router_config
+
+    # Load router configuration without prompting for all router values.
+    # Restore interaction before Proton so signin can prompt for the
+    # password directly when a first-time signin is required.
+    original_non_interactive="$NON_INTERACTIVE"
+
+    NON_INTERACTIVE=1
+    collect_router_config
+    validate_router_config
+
+    NON_INTERACTIVE="$original_non_interactive"
+
+    phase_proton
+    phase_managed_connect
+
+    run_root systemctl enable --now proton-router-vpn-refresh.timer
+
+    # Proton is now proven working. LAN clients may finally receive this
+    # router as their default gateway and DNS server.
+    disable_provisioning_dhcp
+
+    # Final custom enablement, including Proton autoconnect, happens only
+    # after the managed connection has succeeded.
+    phase_services
+
+    # Arm a NEW reboot checkpoint using this boot ID. The final verify
+    # phase must observe yet another boot ID after the unattended reboot.
+    write_reboot_checkpoint
+
+    note "post-reboot stage complete"
+    note "FINAL REBOOT REQUIRED for unattended verification"
+)
+
+verify_file_mode_owner() {
+    local path="$1"
+    local owner="$2"
+    local group="$3"
+    local mode="$4"
+    local actual
+
+    [[ -f "$path" ]] ||
+        die "required file is missing: $path"
+
+    actual="$(
+        run_root stat \
+            -c '%U:%G:%a' \
+            "$path"
+    )"
+
+    [[ "$actual" == "$owner:$group:$mode" ]] ||
+        die "unexpected metadata for $path: $actual"
+}
+
+verify_exact_symlink() {
+    local link="$1"
+    local expected="$2"
+    local actual
+
+    [[ -L "$link" ]] ||
+        die "required symlink is missing: $link"
+
+    actual="$(
+        run_root readlink "$link"
+    )"
+
+    [[ "$actual" == "$expected" ]] ||
+        die "unexpected symlink target for $link: $actual"
+}
+
+verify_generated_configuration_current() (
+    local generator
+    local config
+    local audit_root
+    local rel
+    local actual
+    local expected
+
+    generator="$(
+        root_path \
+            /usr/local/sbin/proton-router-apply-conf
+    )"
+
+    config="$(
+        root_path \
+            /etc/proton-router.conf
+    )"
+
+    [[ -x "$generator" ]] ||
+        die "configuration generator is missing: $generator"
+
+    [[ -f "$config" ]] ||
+        die "router configuration is missing: $config"
+
+    audit_root="$(mktemp -d)"
+    trap 'run_root rm -rf -- "$audit_root"' EXIT
+
+    run_root install \
+        -D \
+        -o root \
+        -g root \
+        -m 0644 \
+        "$config" \
+        "$audit_root/etc/proton-router.conf"
+
+    run_root "$generator" \
+        --root "$audit_root" \
+        --generate-only \
+        >/dev/null
+
+    for rel in \
+        etc/nftables.d/generated-vars.nft \
+        etc/dnsmasq.d/generated-vars.conf \
+        etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf \
+        etc/polkit-1/rules.d/49-protonvpn-networkmanager.rules \
+        etc/sudoers.d/protonvpn-bootstrap \
+        etc/systemd/system/proton-keyring-init.service
+    do
+        expected="$audit_root/$rel"
+        actual="$(
+            root_path "/$rel"
+        )"
+
+        run_root test -f "$actual" ||
+            die "generated file is missing: $actual"
+
+        run_root cmp -s \
+            "$expected" \
+            "$actual" ||
+            die "generated file does not match router configuration: /$rel"
+    done
+
+    note "generated configuration matches /etc/proton-router.conf"
+)
+
+verify_static_source_install() {
+    local source_rel="$1"
+    local destination_abs="$2"
+    local expected_uid="$3"
+    local expected_gid="$4"
+    local expected_mode="$5"
+
+    local source
+    local destination
+    local actual_metadata
+
+    [[ "$destination_abs" == /* ]] ||
+        die "static verification destination must be absolute: $destination_abs"
+
+    source="$SCRIPT_DIR/$source_rel"
+    destination="$(root_path "$destination_abs")"
+
+    [[ -f "$source" ]] ||
+        die "repository source is missing: $source_rel"
+
+    [[ -f "$destination" ]] ||
+        die "installed static file is missing: $destination_abs"
+
+    run_root cmp -s \
+        "$source" \
+        "$destination" ||
+        die "installed static file differs from repository source: $destination_abs"
+
+    actual_metadata="$(
+        run_root stat \
+            -c '%u:%g:%a' \
+            "$destination"
+    )"
+
+    [[ "$actual_metadata" == \
+       "$expected_uid:$expected_gid:$expected_mode" ]] ||
+        die "unexpected metadata for $destination_abs: $actual_metadata"
+}
+
+verify_lightdm_base_configuration() {
+    local main_config
+
+    main_config="$(
+        root_path \
+            /etc/lightdm/lightdm.conf
+    )"
+
+    [[ -f "$main_config" ]] ||
+        die "LightDM main configuration is missing"
+
+    if run_root grep -Eq \
+        '^[[:space:]]*autologin-(user|session)[[:space:]]*=' \
+        "$main_config"
+    then
+        die "LightDM main configuration still contains active autologin settings"
+    fi
+
+    note "LightDM base configuration has no conflicting autologin settings"
+}
+
+verify_web_http_health() {
+    [[ -x /usr/bin/python3 ]] ||
+        die "Python 3 is unavailable for web health verification"
+
+    if ! /usr/bin/python3 - "$LAN_ADDR" <<'PYWEB'
+import json
+import socket
+import sys
+
+host = sys.argv[1]
+port = 8080
+
+def request(path):
+    payload = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    ).encode("ascii")
+
+    with socket.create_connection((host, port), timeout=3) as sock:
+        sock.sendall(payload)
+
+        data = bytearray()
+
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+
+            data.extend(chunk)
+
+            if len(data) > 4 * 1024 * 1024:
+                raise SystemExit(
+                    f"{path}: HTTP response exceeded safety limit"
+                )
+
+    header, separator, body = bytes(data).partition(b"\r\n\r\n")
+
+    if not separator:
+        raise SystemExit(
+            f"{path}: malformed HTTP response"
+        )
+
+    status_line = header.split(b"\r\n", 1)[0]
+    parts = status_line.split()
+
+    if len(parts) < 2 or not parts[0].startswith(b"HTTP/1."):
+        raise SystemExit(
+            f"{path}: invalid HTTP status line"
+        )
+
+    if parts[1] != b"200":
+        raise SystemExit(
+            f"{path}: expected HTTP 200, got "
+            + status_line.decode("ascii", "replace")
+        )
+
+    return body
+
+root_body = request("/")
+
+if not root_body:
+    raise SystemExit("/: empty response body")
+
+status_body = request("/api/status")
+
+try:
+    parsed = json.loads(status_body.decode("utf-8"))
+except Exception as exc:
+    raise SystemExit(
+        f"/api/status: invalid JSON: {exc}"
+    )
+
+if not isinstance(parsed, dict):
+    raise SystemExit(
+        "/api/status: JSON response is not an object"
+    )
+PYWEB
+    then
+        die "router web UI/API HTTP health check failed"
+    fi
+
+    note "router web UI/API HTTP health verified"
+}
+
+verify_final_artifact_tree() {
+    local config
+    local lan_profile
+    local wan_profile
+    local bypass_script
+    local dispatcher
+    local keyring_dir
+    local router_uid
+    local router_gid
+
+    config="$(root_path /etc/proton-router.conf)"
+
+    lan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/LAN.nmconnection
+    )"
+
+    wan_profile="$(
+        root_path \
+            /etc/NetworkManager/system-connections/WAN.nmconnection
+    )"
+
+    bypass_script="$(
+        root_path \
+            /usr/local/sbin/proton-bypass
+    )"
+
+    dispatcher="$(
+        root_path \
+            /etc/NetworkManager/dispatcher.d/90-proton-bypass
+    )"
+
+    keyring_dir="$(
+        root_path \
+            "$ROUTER_HOME/.local/share/keyrings"
+    )"
+
+    router_uid="$(id -u "$ROUTER_USER")"
+    router_gid="$(id -g "$ROUTER_USER")"
+
+    #
+    # Exact static source -> installed artifact verification.
+    #
+    verify_static_source_install \
+        scripts/proton-router-apply-conf \
+        /usr/local/sbin/proton-router-apply-conf \
+        0 0 755
+
+    verify_static_source_install \
+        scripts/proton-bypass \
+        /usr/local/sbin/proton-bypass \
+        0 0 755
+
+    verify_static_source_install \
+        scripts/proton-keyring-init \
+        /usr/local/sbin/proton-keyring-init \
+        0 0 755
+
+    verify_static_source_install \
+        scripts/proton-router-vpn-refresh \
+        /usr/local/sbin/proton-router-vpn-refresh \
+        0 0 755
+
+    verify_static_source_install \
+        config/90-proton-router-domain-block.conf \
+        /etc/dnsmasq.d/90-proton-router-domain-block.conf \
+        0 0 644
+
+    verify_static_source_install \
+        config/proton-router-vpn-refresh.service \
+        /etc/systemd/system/proton-router-vpn-refresh.service \
+        0 0 644
+
+    verify_static_source_install \
+        config/proton-router-vpn-refresh.timer \
+        /etc/systemd/system/proton-router-vpn-refresh.timer \
+        0 0 644
+
+    verify_static_source_install \
+        config/nftables.conf \
+        /etc/nftables.conf \
+        0 0 755
+
+    verify_static_source_install \
+        config/dnsmasq-router.conf \
+        /etc/dnsmasq.d/router.conf \
+        0 0 644
+
+    verify_static_source_install \
+        config/99-router.conf \
+        /etc/sysctl.d/99-router.conf \
+        0 0 644
+
+    verify_static_source_install \
+        config/NetworkManager-wait-online.override.conf \
+        /etc/systemd/system/NetworkManager-wait-online.service.d/override.conf \
+        0 0 644
+
+    verify_static_source_install \
+        scripts/protonvpn-autoconnect \
+        "$ROUTER_HOME/.local/bin/protonvpn-autoconnect" \
+        "$router_uid" "$router_gid" 700
+
+    verify_static_source_install \
+        config/protonvpn-autoconnect.service \
+        "$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service" \
+        "$router_uid" "$router_gid" 664
+
+    verify_static_source_install \
+        config/proton-router-web.service \
+        "$ROUTER_HOME/.config/systemd/user/proton-router-web.service" \
+        "$router_uid" "$router_gid" 644
+
+    verify_static_source_install \
+        config/gnome-keyring-secrets.desktop \
+        "$ROUTER_HOME/.config/autostart/gnome-keyring-secrets.desktop" \
+        "$router_uid" "$router_gid" 664
+
+    verify_static_source_install \
+        web/index.html \
+        /usr/local/share/proton-router-web/index.html \
+        0 0 644
+
+    verify_static_source_install \
+        web/app.js \
+        /usr/local/share/proton-router-web/app.js \
+        0 0 644
+
+    verify_static_source_install \
+        web/styles.css \
+        /usr/local/share/proton-router-web/styles.css \
+        0 0 644
+
+    verify_static_source_install \
+        web/server.py \
+        /usr/local/share/proton-router-web/server.py \
+        0 0 755
+
+    note "static installed artifacts match repository sources"
+
+    verify_lightdm_base_configuration
+
+    verify_file_mode_owner \
+        "$(root_path /etc/proton-bypass/devices.conf)" \
+        root root 644
+
+    verify_file_mode_owner \
+        "$config" root root 644
+
+    verify_file_mode_owner \
+        "$lan_profile" root root 600
+
+    verify_file_mode_owner \
+        "$wan_profile" root root 600
+
+    verify_file_mode_owner \
+        "$(root_path /etc/nftables.conf)" \
+        root root 755
+
+    verify_file_mode_owner \
+        "$(root_path /etc/sudoers.d/protonvpn-bootstrap)" \
+        root root 440
+
+    verify_file_mode_owner \
+        "$(root_path /etc/systemd/system/proton-keyring-init.service)" \
+        root root 644
+
+    [[ -x "$bypass_script" ]] ||
+        die "proton-bypass is missing or not executable"
+
+    [[ -e "$dispatcher" ]] ||
+        die "NetworkManager proton-bypass dispatcher is missing"
+
+    [[ "$(
+        run_root stat -c '%d:%i' "$bypass_script"
+    )" == "$(
+        run_root stat -c '%d:%i' "$dispatcher"
+    )" ]] ||
+        die "NetworkManager dispatcher is not the proton-bypass hardlink"
+
+    keyring_existing_marker "$keyring_dir" ||
+        die "router user keyring state is missing"
+
+    verify_exact_symlink \
+        "$(root_path /etc/systemd/system/graphical.target.wants/proton-keyring-init.service)" \
+        "/etc/systemd/system/proton-keyring-init.service"
+
+    verify_exact_symlink \
+        "$(root_path "$ROUTER_HOME/.config/systemd/user/default.target.wants/protonvpn-autoconnect.service")" \
+        "$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service"
+
+    verify_exact_symlink \
+        "$(root_path "$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service")" \
+        "$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+
+    verify_generated_configuration_current
+
+    note "final artifact tree verified"
+}
+
+verify_no_competing_router_profiles() {
+    local lan_uuid
+    local wan_uuid
+    local uuid
+    local type
+    local interface_name
+
+    lan_uuid="$(active_connection_uuid "$LAN_IF")"
+    wan_uuid="$(active_connection_uuid "$WAN_IF")"
+
+    [[ -n "$lan_uuid" ]] ||
+        die "could not determine active LAN UUID"
+
+    [[ -n "$wan_uuid" ]] ||
+        die "could not determine active WAN UUID"
+
+    while IFS=: read -r uuid type; do
+        [[ -n "$uuid" ]] ||
+            continue
+
+        case "$type" in
+            ethernet|802-3-ethernet)
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        if [[ "$uuid" == "$lan_uuid" ||
+              "$uuid" == "$wan_uuid" ]]
+        then
+            continue
+        fi
+
+        interface_name="$(
+            nmcli \
+                -g connection.interface-name \
+                connection show uuid "$uuid" \
+                2>/dev/null ||
+            true
+        )"
+
+        case "$interface_name" in
+            ""|"$LAN_IF"|"$WAN_IF")
+                die "competing router Ethernet profile remains: $uuid"
+                ;;
+        esac
+    done < <(
+        nmcli \
+            -t \
+            --escape no \
+            -f UUID,TYPE \
+            connection show
+    )
+
+    note "no competing router Ethernet profiles found"
+}
+
+verify_final_runtime() {
+    local unit
+    local state
+    local secret_owner
+    local proton_status
+    local proton_config
+    local proton_dns
+    local host_dns
+    local dns_route
+    local bootstrap_rules
+    local forward_chain
+    local output_chain
+    local table_routes
+    local wan_gateway
+    local lan_net
+    local rule_pattern
+
+    require_host_command nmcli
+    require_host_command ip
+    require_host_command systemctl
+    require_host_command sysctl
+
+    [[ -x /usr/bin/protonvpn ]] ||
+        die "Proton CLI is unavailable"
+
+    [[ -x /usr/bin/gdbus ]] ||
+        die "gdbus is unavailable"
+
+    [[ -x /usr/sbin/nft ]] ||
+        die "nft is unavailable"
+
+    [[ -x /usr/sbin/dnsmasq ]] ||
+        die "dnsmasq is unavailable"
+
+    #
+    # Package/system services.
+    #
+    for unit in \
+        NetworkManager.service \
+        NetworkManager-wait-online.service \
+        nftables.service \
+        dnsmasq.service \
+        lightdm.service \
+        proton-keyring-init.service \
+        proton-router-vpn-refresh.timer
+    do
+        state="$(
+            systemctl is-enabled "$unit" \
+                2>/dev/null ||
+            true
+        )"
+
+        [[ "$state" == "enabled" ]] ||
+            die "$unit is not enabled: $state"
+
+        state="$(
+            systemctl is-failed "$unit" \
+                2>/dev/null ||
+            true
+        )"
+
+        [[ "$state" != "failed" ]] ||
+            die "$unit is failed"
+    done
+
+    for unit in \
+        NetworkManager.service \
+        nftables.service \
+        dnsmasq.service \
+        lightdm.service \
+        proton-router-vpn-refresh.timer
+    do
+        state="$(
+            systemctl is-active "$unit" \
+                2>/dev/null ||
+            true
+        )"
+
+        [[ "$state" == "active" ]] ||
+            die "$unit is not active: $state"
+    done
+
+    #
+    # Desktop user manager and Secret Service.
+    #
+    secret_owner="$(
+        run_router_user_bus \
+            /usr/bin/gdbus call \
+            --session \
+            --dest org.freedesktop.DBus \
+            --object-path /org/freedesktop/DBus \
+            --method org.freedesktop.DBus.NameHasOwner \
+            org.freedesktop.secrets
+    )"
+
+    [[ "$secret_owner" == "(true,)" ]] ||
+        die "Secret Service is unavailable for $ROUTER_USER"
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-enabled \
+            protonvpn-autoconnect.service \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" == "enabled" ]] ||
+        die "protonvpn-autoconnect.service is not enabled: $state"
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-failed \
+            protonvpn-autoconnect.service \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" != "failed" ]] ||
+        die "protonvpn-autoconnect.service is failed"
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-enabled \
+            proton-router-web.service \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" == "enabled" ]] ||
+        die "proton-router-web.service is not enabled: $state"
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-active \
+            proton-router-web.service \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" == "active" ]] ||
+        die "proton-router-web.service is not active: $state"
+
+    #
+    # Network roles.
+    #
+    validate_router_ethernet_device_scope
+
+    [[ "$(
+        nmcli -g GENERAL.CONNECTION device show "$LAN_IF"
+    )" == "LAN" ]] ||
+        die "LAN is not active on $LAN_IF"
+
+    [[ "$(
+        nmcli -g GENERAL.CONNECTION device show "$WAN_IF"
+    )" == "WAN" ]] ||
+        die "WAN is not active on $WAN_IF"
+
+    ip -4 -o addr show dev "$LAN_IF" |
+        awk '{print $4}' |
+        grep -Fxq "$LAN_ADDR/$LAN_PREFIX" ||
+        die "configured LAN address is not active"
+
+    ip -4 route show default dev "$WAN_IF" |
+        grep -q . ||
+        die "WAN IPv4 default route is missing"
+
+    verify_no_competing_router_profiles
+
+    [[ "$(nmcli radio wifi)" == "disabled" ]] ||
+        die "Wi-Fi radio is not disabled"
+
+    sudo test -f /var/lib/NetworkManager/NetworkManager.state ||
+        die "NetworkManager persistent state is missing"
+
+    sudo grep -qx \
+        'WirelessEnabled=false' \
+        /var/lib/NetworkManager/NetworkManager.state ||
+        die "Wi-Fi disabled state is not persistent"
+
+    [[ "$(sysctl -n net.ipv4.ip_forward)" == "1" ]] ||
+        die "IPv4 forwarding is not enabled"
+
+    #
+    # Proton state.
+    #
+    proton_status="$(
+        run_router_user_bus \
+            /usr/bin/protonvpn status \
+            2>&1
+    )"
+
+    grep -q '^Status: Connected' \
+        <<< "$proton_status" ||
+        die "Proton is not connected"
+
+    [[ -e /sys/class/net/proton0 ]] ||
+        die "proton0 is missing"
+
+    [[ "$(
+        nmcli -g GENERAL.TYPE device show proton0
+    )" == "wireguard" ]] ||
+        die "proton0 is not WireGuard"
+
+    proton_config="$(
+        run_router_user_bus \
+            /usr/bin/protonvpn config list \
+            2>&1
+    )"
+
+    grep -Eq \
+        '^[[:space:]]*kill-switch[[:space:]]+standard[[:space:]]*$' \
+        <<< "$proton_config" ||
+        die "Proton kill switch is not standard"
+
+    grep -Eq \
+        '^[[:space:]]*ipv6[[:space:]]+off[[:space:]]*$' \
+        <<< "$proton_config" ||
+        die "Proton IPv6 setting is not off"
+
+    nmcli \
+        -t \
+        --escape no \
+        -f NAME,TYPE \
+        connection show --active |
+        grep -Fxq 'pvpn-killswitch:dummy' ||
+        die "Proton standard kill-switch connection is not active"
+
+    #
+    # Prove the LAN web UI and status API actually answer, rather than
+    # relying only on the systemd service state.
+    #
+    verify_web_http_health
+
+    #
+    # DNS policy.
+    #
+    [[ "$(
+        nmcli -g ipv4.dns connection show WAN |
+        tr -d '[:space:]'
+    )" == "127.0.0.1" ]] ||
+        die "WAN persistent DNS is not 127.0.0.1"
+
+    [[ "$(
+        nmcli -g ipv4.ignore-auto-dns connection show WAN |
+        tr -d '[:space:]'
+    )" == "yes" ]] ||
+        die "WAN does not ignore automatic DNS"
+
+    grep -Fxq \
+        "server=$DNS_UPSTREAM" \
+        /etc/dnsmasq.d/generated-vars.conf ||
+        die "dnsmasq upstream does not match DNS_UPSTREAM"
+
+    dns_route="$(
+        ip -4 route get "$DNS_UPSTREAM" \
+            2>/dev/null |
+        head -n 1
+    )"
+
+    grep -Eq \
+        '(^|[[:space:]])dev[[:space:]]+proton0([[:space:]]|$)' \
+        <<< "$dns_route" ||
+        die "DNS_UPSTREAM does not route through proton0"
+
+    proton_dns="$(
+        nmcli \
+            -g IP4.DNS \
+            device show proton0 |
+        head -n 1 |
+        tr -d '[:space:]'
+    )"
+
+    valid_ipv4 "$proton_dns" ||
+        die "Proton did not provide a valid IPv4 DNS server"
+
+    host_dns="$(
+        awk \
+            '$1 == "nameserver" {print $2; exit}' \
+            /etc/resolv.conf
+    )"
+
+    [[ "$host_dns" == "$proton_dns" ]] ||
+        die "host resolver does not match Proton DNS: host=$host_dns proton=$proton_dns"
+
+    #
+    # nftables fail-closed runtime state.
+    #
+    run_root /usr/sbin/nft \
+        -c \
+        -f /etc/nftables.conf \
+        >/dev/null ||
+        die "nftables syntax check failed"
+
+    bootstrap_rules="$(
+        run_root /usr/sbin/nft \
+            -a \
+            list chain inet router_filter host_wan_bootstrap
+    )"
+
+    if grep -Eq \
+        '^[[:space:]]+accept([[:space:]]|$)' \
+        <<< "$bootstrap_rules"
+    then
+        die "host_wan_bootstrap is open"
+    fi
+
+    forward_chain="$(
+        run_root /usr/sbin/nft \
+            list chain inet router_filter forward
+    )"
+
+    grep -q 'policy drop' \
+        <<< "$forward_chain" ||
+        die "router forward chain is not default-drop"
+
+    grep -Eq \
+        "iifname[[:space:]]+\"?$LAN_IF\"?[[:space:]]+oifname[[:space:]]+\"?proton0\"?.*accept" \
+        <<< "$forward_chain" ||
+        die "LAN-to-Proton forwarding rule is missing"
+
+    output_chain="$(
+        run_root /usr/sbin/nft \
+            list chain inet router_filter output
+    )"
+
+    grep -Eq \
+        "oifname[[:space:]]+\"?$WAN_IF\"?[[:space:]]+drop" \
+        <<< "$output_chain" ||
+        die "host raw-WAN drop rule is missing"
+
+    run_root /usr/sbin/nft \
+        list set inet router_filter proton_bypass_devices \
+        >/dev/null ||
+        die "proton_bypass_devices nftables set is missing"
+
+    run_root /usr/sbin/dnsmasq \
+        --test \
+        >/dev/null ||
+        die "dnsmasq configuration test failed"
+
+    #
+    # Bypass policy route.
+    #
+    rule_pattern="^${BYPASS_RULE_PRIORITY}:[[:space:]].*fwmark[[:space:]]+${BYPASS_MARK}([[:space:]]|/).*lookup[[:space:]]+${BYPASS_TABLE}([[:space:]]|$)"
+
+    ip -4 rule show |
+        grep -Eq "$rule_pattern" ||
+        die "bypass policy rule is missing"
+
+    table_routes="$(
+        ip -4 route show table "$BYPASS_TABLE"
+    )"
+
+    grep -Eq '^blackhole[[:space:]]+default' \
+        <<< "$table_routes" ||
+        die "bypass routing table has no blackhole default"
+
+    wan_gateway="$(
+        ip -4 route show default dev "$WAN_IF" |
+        awk '
+            NR == 1 {
+                for (i = 1; i <= NF; i++) {
+                    if ($i == "via" && i < NF) {
+                        print $(i + 1)
+                        exit
+                    }
+                }
+            }
+        '
+    )"
+
+    [[ -n "$wan_gateway" ]] ||
+        die "could not determine WAN default gateway"
+
+    grep -Fq \
+        "default via $wan_gateway dev $WAN_IF" \
+        <<< "$table_routes" ||
+        die "bypass table does not contain current WAN default route"
+
+    lan_net="$(
+        ip -4 route show dev "$LAN_IF" \
+            proto kernel \
+            scope link |
+        awk 'NR == 1 {print $1}'
+    )"
+
+    [[ -n "$lan_net" ]] ||
+        die "could not determine LAN connected network"
+
+    grep -Fq \
+        "$lan_net dev $LAN_IF" \
+        <<< "$table_routes" ||
+        die "bypass table does not contain LAN connected route"
+
+    note "final runtime invariants verified"
+}
+
+phase_final_verify() {
+    local installed_config
+    local checkpoint
+
+    note "phase: final-verify"
+
+    #
+    # This checkpoint was rewritten at the end of post-reboot.
+    # Therefore a changed boot ID proves the second reboot occurred.
+    #
+    verify_reboot_checkpoint
+
+    installed_config="$(
+        root_path \
+            /etc/proton-router.conf
+    )"
+
+    [[ -f "$installed_config" ]] ||
+        die "installed router configuration is missing: $installed_config"
+
+    #
+    # Final verification always uses installed appliance state as truth;
+    # an external --answers file must not redefine what we verify.
+    #
+    ANSWERS_FILE="$installed_config"
+    ANSWERS_LOADED=0
+    CONFIG_COLLECTED=0
+    NON_INTERACTIVE=1
+
+    collect_router_config
+    validate_router_config
+    resolve_router_home
+
+    verify_final_artifact_tree
+
+    if [[ "$TARGET_ROOT" != "/" ]]; then
+        note "staging mode: final runtime checks were not executed"
+        note "staging mode: reboot checkpoint was retained"
+        note "phase final-verify complete"
+        return
+    fi
+
+    verify_final_runtime
+
+    #
+    # Completion mutation: this happens only after every final check above
+    # succeeds. A failed verification deliberately leaves the checkpoint.
+    #
+    checkpoint="$(reboot_checkpoint_path)"
+
+    run_root rm -f -- "$checkpoint"
+
+    run_root rmdir \
+        "$(dirname "$checkpoint")" \
+        2>/dev/null ||
+        true
+
+    note "reboot checkpoint consumed"
+    note "FINAL VERIFICATION PASSED"
+    note "phase final-verify complete"
+}
+
+while (($#)); do
+    case "$1" in
+        --root)
+            (($# >= 2)) ||
+                die "--root requires a directory"
+
+            TARGET_ROOT="$2"
+            shift 2
+            ;;
+
+        --live)
+            LIVE_MODE=1
+            TARGET_ROOT="/"
+            shift
+            ;;
+
+        --phase)
+            (($# >= 2)) ||
+                die "--phase requires a phase name"
+
+            PHASE="$2"
+            shift 2
+            ;;
+
+        --answers)
+            (($# >= 2)) ||
+                die "--answers requires a filename"
+
+            ANSWERS_FILE="$2"
+            shift 2
+            ;;
+
+        --bypass-file)
+            (($# >= 2)) ||
+                die "--bypass-file requires a filename"
+
+            BYPASS_FILE_INPUT="$2"
+            shift 2
+            ;;
+
+        --pcie-state)
+            (($# >= 2)) ||
+                die "--pcie-state requires auto, present, or missing"
+
+            PCIE_STATE="$2"
+            shift 2
+            ;;
+
+        --with-optional)
+            INSTALL_OPTIONAL=1
+            shift
+            ;;
+
+        --proton-username)
+            (($# >= 2)) ||
+                die "--proton-username requires a value"
+
+            case "${2,,}" in
+                your_proton_username|your-proton-username)
+                    # Treat documentation placeholders as omitted so
+                    # interactive Proton provisioning asks for the real
+                    # username instead of sending the placeholder to Proton.
+                    PROTON_USERNAME_ARG=""
+                    ;;
+                *)
+                    PROTON_USERNAME_ARG="$2"
+                    ;;
+            esac
+
+            shift 2
+            ;;
+
+        --allow-live-install)
+            ALLOW_LIVE_INSTALL=1
+            shift
+            ;;
+
+        --allow-network-cutover)
+            ALLOW_NETWORK_CUTOVER=1
+            shift
+            ;;
+
+        --allow-wifi-disable)
+            ALLOW_WIFI_DISABLE=1
+            shift
+            ;;
+
+        --non-interactive)
+            NON_INTERACTIVE=1
+            shift
+            ;;
+
+        -h|--help)
+            usage
+            exit 0
+            ;;
+
+        *)
+            die "unknown option: $1"
+            ;;
+    esac
+done
+
+[[ -n "$TARGET_ROOT" ]] ||
+    die "choose either --root DIR for testing or --live"
+
+[[ -n "$PHASE" ]] ||
+    die "--phase is required"
+
+if [[ "$TARGET_ROOT" != "/" ]]; then
+    mkdir -p "$TARGET_ROOT"
+    TARGET_ROOT="$(
+        cd "$TARGET_ROOT"
+        pwd -P
+    )"
+
+    note "STAGING MODE: $TARGET_ROOT"
+else
+    (( LIVE_MODE )) ||
+        die "targeting / requires explicit --live"
+
+    (( ALLOW_LIVE_INSTALL )) ||
+        die "live installation requires explicit --allow-live-install"
+
+    note "LIVE MODE ENABLED: /"
+fi
+
+case "$PHASE" in
+    config)
+        phase_config
+        ;;
+
+    files)
+        phase_files
+        ;;
+
+    bypass)
+        phase_bypass
+        ;;
+
+    boot)
+        phase_boot
+        ;;
+
+    platform)
+        phase_platform
+        ;;
+
+    repository)
+        phase_repository
+        ;;
+
+    packages)
+        phase_packages
+        ;;
+
+    network)
+        phase_network
+        ;;
+
+    lightdm)
+        phase_lightdm
+        ;;
+
+    keyring)
+        phase_keyring
+        ;;
+
+    apply)
+        phase_apply
+        ;;
+
+    services)
+        phase_services
+        ;;
+
+    proton)
+        phase_proton
+        ;;
+
+    cutover)
+        phase_cutover
+        ;;
+
+    wifi)
+        phase_wifi
+        ;;
+
+    boot-services)
+        phase_boot_services
+        ;;
+
+    managed-connect)
+        phase_managed_connect
+        ;;
+
+    pre-reboot)
+        phase_pre_reboot
+        ;;
+
+    pre-reboot-resume)
+        phase_pre_reboot_resume
+        ;;
+
+    post-reboot)
+        phase_post_reboot
+        ;;
+
+    final-verify)
+        phase_final_verify
+        ;;
+
+    *)
+        die "phase not implemented yet: $PHASE"
+        ;;
+esac

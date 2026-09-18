@@ -1,0 +1,1610 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+umask 077
+
+report_progress() {
+    local percent="$1"
+    local phase="$2"
+    local width=28
+    local filled
+    local remaining
+    local full
+    local empty
+
+    if (( percent < 0 )); then
+        percent=0
+    fi
+
+    if (( percent > 100 )); then
+        percent=100
+    fi
+
+    filled=$(( percent * width / 100 ))
+    remaining=$(( width - filled ))
+
+    printf -v full '%*s' "$filled" ''
+    printf -v empty '%*s' "$remaining" ''
+
+    full="${full// /#}"
+    empty="${empty// /-}"
+
+    if [[ -t 2 ]]; then
+        printf \
+            'VPN refresh [%s%s] %3d%%  %s\n' \
+            "$full" \
+            "$empty" \
+            "$percent" \
+            "$phase" \
+            >&2
+    else
+        printf \
+            'progress=%03d%% phase=%s\n' \
+            "$percent" \
+            "$phase" \
+            >&2
+    fi
+
+    if [[ -n "${NOTIFY_SOCKET:-}" ]] \
+        && [[ -x /usr/bin/systemd-notify ]]
+    then
+        /usr/bin/systemd-notify \
+            --status="VPN_PROGRESS|${percent}|${phase}" \
+            >/dev/null 2>&1 \
+            || true
+    fi
+}
+
+
+download_url() {
+    local label="$1"
+    local url="$2"
+    local output="$3"
+
+    if curl \
+        --fail \
+        --location \
+        --silent \
+        --show-error \
+        --compressed \
+        --connect-timeout 15 \
+        --max-time 120 \
+        --retry 2 \
+        --retry-delay 2 \
+        --user-agent 'proton-router-vpn-refresh/1.0' \
+        --output "$output" \
+        "$url"
+    then
+        printf '%s-download=PASS\n' "$label"
+        return 0
+    fi
+
+    rm -f "$output"
+
+    printf '%s-download=WARNING\n' "$label"
+
+    return 1
+}
+
+validate_provider_tsv() {
+    local provider="$1"
+    local file="$2"
+    local minimum="$3"
+    local rows
+
+    [ -s "$file" ] || return 1
+
+    if ! rows="$(
+        awk \
+            -F '\t' \
+            -v provider="$provider" '
+                NF != 3 ||
+                $1 != provider ||
+                $2 == "" ||
+                $3 == "" {
+                    bad = 1
+                }
+
+                {
+                    rows++
+                }
+
+                END {
+                    if (bad) {
+                        exit 1
+                    }
+
+                    print rows + 0
+                }
+            ' \
+            "$file"
+    )"
+    then
+        printf '%s-tsv-validation=FAIL\n' "$provider"
+        return 1
+    fi
+
+    printf '%s-adapter-rows=%s\n' \
+        "$provider" \
+        "$rows"
+
+    if [ "$rows" -lt "$minimum" ]
+    then
+        printf '%s-dataset-too-small minimum=%s actual=%s\n' \
+            "$provider" \
+            "$minimum" \
+            "$rows"
+
+        return 1
+    fi
+
+    printf '%s-tsv-validation=PASS\n' "$provider"
+
+    return 0
+}
+
+validate_tor_source() {
+    local source="$1"
+
+    python3 - "$source" <<'PYTOR_SOURCE'
+import datetime
+import json
+import sys
+
+with open(
+    sys.argv[1],
+    "r",
+    encoding="utf-8",
+) as handle:
+    document = json.load(handle)
+
+relays = document.get("relays")
+
+if not isinstance(relays, list):
+    raise SystemExit(
+        "FAIL: Tor relays is not an array"
+    )
+
+if len(relays) < 5000:
+    raise SystemExit(
+        "FAIL: suspiciously small Tor running-relay catalog"
+    )
+
+truncated = document.get(
+    "relays_truncated",
+    0,
+)
+
+if truncated not in (0, None):
+    raise SystemExit(
+        f"FAIL: Tor catalog truncated={truncated}"
+    )
+
+published_text = document.get(
+    "relays_published"
+)
+
+if not isinstance(
+    published_text,
+    str,
+) or not published_text:
+    raise SystemExit(
+        "FAIL: Tor relays_published missing"
+    )
+
+published = datetime.datetime.strptime(
+    published_text,
+    "%Y-%m-%d %H:%M:%S",
+).replace(
+    tzinfo=datetime.timezone.utc
+)
+
+now = datetime.datetime.now(
+    datetime.timezone.utc
+)
+
+age_seconds = (
+    now - published
+).total_seconds()
+
+if age_seconds < -3600:
+    raise SystemExit(
+        "FAIL: Tor catalog timestamp unexpectedly in future"
+    )
+
+if age_seconds > 12 * 3600:
+    raise SystemExit(
+        "FAIL: Tor running-relay catalog older than 12 hours"
+    )
+
+for relay in relays:
+    if not isinstance(relay, dict):
+        raise SystemExit(
+            "FAIL: invalid Tor relay object"
+        )
+
+    if relay.get("running") is not True:
+        raise SystemExit(
+            "FAIL: non-running relay in running=true response"
+        )
+
+print(
+    f"tor-running-relays={len(relays)}"
+)
+
+print(
+    f"tor-relays-published={published_text}"
+)
+
+print(
+    "TOR SOURCE VALIDATION: PASS"
+)
+PYTOR_SOURCE
+}
+
+validate_tor_tsv() {
+    local source="$1"
+
+    python3 - "$source" <<'PYTOR_TSV'
+import ipaddress
+import sys
+
+rows = 0
+ipv4 = set()
+ipv6 = set()
+
+with open(
+    sys.argv[1],
+    "r",
+    encoding="utf-8",
+) as handle:
+    for number, raw in enumerate(handle, 1):
+        fields = raw.rstrip("\n").split("\t")
+
+        if len(fields) != 3:
+            raise SystemExit(
+                f"FAIL: Tor TSV line {number}"
+            )
+
+        provider, value, provenance = fields
+
+        if provider != "tor":
+            raise SystemExit(
+                f"FAIL: Tor TSV provider={provider!r}"
+            )
+
+        if not provenance.startswith("onionoo:"):
+            raise SystemExit(
+                f"FAIL: Tor provenance line {number}"
+            )
+
+        ip = ipaddress.ip_address(value)
+
+        if not ip.is_global:
+            raise SystemExit(
+                f"FAIL: non-global Tor endpoint {ip}"
+            )
+
+        rows += 1
+
+        if ip.version == 4:
+            ipv4.add(str(ip))
+        else:
+            ipv6.add(str(ip))
+
+print(
+    f"tor-adapter-rows={rows}"
+)
+
+print(
+    f"tor-unique-global-ipv4={len(ipv4)}"
+)
+
+print(
+    f"tor-unique-global-ipv6={len(ipv6)}"
+)
+
+if rows < 8000:
+    raise SystemExit(
+        "FAIL: suspiciously small Tor adapter output"
+    )
+
+if len(ipv4) < 5000:
+    raise SystemExit(
+        "FAIL: suspiciously small Tor IPv4 population"
+    )
+
+print(
+    "TOR TSV VALIDATION: PASS"
+)
+PYTOR_TSV
+}
+
+use_lkg_or_fail() {
+    local provider="$1"
+    local output="$2"
+    local minimum="$3"
+
+    if [ ! -s "$LKG/$provider.tsv" ]
+    then
+        printf '%s ADAPTER: FAIL - NO LAST-KNOWN-GOOD\n' \
+            "${provider^^}"
+
+        return 1
+    fi
+
+    cp \
+        "$LKG/$provider.tsv" \
+        "$output"
+
+    if ! validate_provider_tsv \
+        "$provider" \
+        "$output" \
+        "$minimum"
+    then
+        printf '%s ADAPTER: FAIL - INVALID LAST-KNOWN-GOOD\n' \
+            "${provider^^}"
+
+        rm -f "$output"
+
+        return 1
+    fi
+
+    printf '%s ADAPTER: USING LAST-KNOWN-GOOD\n' \
+        "${provider^^}"
+
+    return 0
+}
+
+restore_current_firewall() {
+    local current_dir="$STATE/current"
+    local status="$current_dir/status"
+    local ipv4="$current_dir/normalized-ipv4.txt"
+    local cidrs="$current_dir/normalized-ipv4-cidrs.txt"
+
+    local stored_engine
+    local ip_count
+    local cidr_count
+    local actual_ip_count
+    local actual_cidr_count
+
+    local set_exists=0
+    local forward_rules
+    local rule_count
+    local after_rules
+    local after_rule_count
+
+    local restore_file
+
+    echo '=== RESTORE VPN ENDPOINT BLOCK FROM CURRENT DATABASE ==='
+
+    if [ ! -s "$status" ] \
+        || [ ! -s "$ipv4" ] \
+        || [ ! -s "$cidrs" ]
+    then
+        echo 'CURRENT VPN DATABASE MISSING: FAIL'
+        return 1
+    fi
+
+    stored_engine="$(
+        awk \
+            -F= \
+            '$1 == "engine_sha" { print $2 }' \
+            "$status"
+    )"
+
+    ip_count="$(
+        awk \
+            -F= \
+            '$1 == "ipv4_count" { print $2 }' \
+            "$status"
+    )"
+
+    cidr_count="$(
+        awk \
+            -F= \
+            '$1 == "cidr_count" { print $2 }' \
+            "$status"
+    )"
+
+    if [ "$stored_engine" != "$EXPECTED_ENGINE_SHA" ]
+    then
+        echo 'CURRENT DATABASE ENGINE HASH MISMATCH: FAIL'
+        return 1
+    fi
+
+    case "$ip_count" in
+        ''|*[!0-9]*)
+            echo 'CURRENT DATABASE IPv4 COUNT INVALID: FAIL'
+            return 1
+            ;;
+    esac
+
+    case "$cidr_count" in
+        ''|*[!0-9]*)
+            echo 'CURRENT DATABASE CIDR COUNT INVALID: FAIL'
+            return 1
+            ;;
+    esac
+
+    if [ "$ip_count" -lt 15000 ]
+    then
+        echo 'CURRENT DATABASE SUSPICIOUSLY SMALL: FAIL'
+        return 1
+    fi
+
+    if [ "$cidr_count" -lt 1 ]
+    then
+        echo 'CURRENT DATABASE HAS NO CIDRS: FAIL'
+        return 1
+    fi
+
+    actual_ip_count="$(
+        wc -l < "$ipv4"
+    )"
+
+    actual_cidr_count="$(
+        wc -l < "$cidrs"
+    )"
+
+    if [ "$actual_ip_count" -ne "$ip_count" ]
+    then
+        echo 'CURRENT IPv4 COUNT MISMATCH: FAIL'
+        return 1
+    fi
+
+    if [ "$actual_cidr_count" -ne "$cidr_count" ]
+    then
+        echo 'CURRENT CIDR COUNT MISMATCH: FAIL'
+        return 1
+    fi
+
+    for control in \
+        1.1.1.1 \
+        8.8.8.8 \
+        104.20.23.154
+    do
+        if grep -Fxq "$control" "$ipv4"
+        then
+            echo "CURRENT DATABASE CONTROL PRESENT: $control"
+            return 1
+        fi
+    done
+
+    echo 'CURRENT DATABASE VALIDATION: PASS'
+
+    if ! nft list table \
+        inet "$NFT_TABLE" \
+        >/dev/null 2>&1
+    then
+        echo "Required nftables table missing: $NFT_TABLE"
+        return 1
+    fi
+
+    if nft list set \
+        inet "$NFT_TABLE" "$NFT_SET" \
+        >/dev/null 2>&1
+    then
+        set_exists=1
+    fi
+
+    if ! forward_rules="$(
+        nft -a list chain \
+            inet "$NFT_TABLE" forward
+    )"
+    then
+        echo 'Unable to inspect forward chain: FAIL'
+        return 1
+    fi
+
+    rule_count="$(
+        awk \
+            -v needle="$NFT_RULE_COMMENT" '
+                index($0, needle) {
+                    count++
+                }
+
+                END {
+                    print count + 0
+                }
+            ' \
+            <<<"$forward_rules"
+    )"
+
+    if [ "$rule_count" -gt 1 ]
+    then
+        echo "VPN BLOCK RULE DUPLICATE COUNT=$rule_count: FAIL"
+        return 1
+    fi
+
+    restore_file="$(
+        mktemp \
+            /run/proton-router-vpn-restore.XXXXXX.nft
+    )" || return 1
+
+    {
+        if [ "$set_exists" -eq 1 ]
+        then
+            printf 'flush set inet %s %s\n' \
+                "$NFT_TABLE" \
+                "$NFT_SET"
+        else
+            printf \
+                'add set inet %s %s { type ipv4_addr; flags interval; auto-merge; }\n' \
+                "$NFT_TABLE" \
+                "$NFT_SET"
+        fi
+
+        printf 'add element inet %s %s {\n' \
+            "$NFT_TABLE" \
+            "$NFT_SET"
+
+        awk '
+            {
+                lines[NR] = $0
+            }
+
+            END {
+                for (i = 1; i <= NR; i++) {
+                    printf "    %s%s\n",
+                        lines[i],
+                        (i < NR ? "," : "")
+                }
+            }
+        ' "$cidrs"
+
+        printf '}\n'
+
+        if [ "$rule_count" -eq 0 ]
+        then
+            printf \
+                'insert rule inet %s forward iifname "%s" ip daddr @%s counter drop comment "%s"\n' \
+                "$NFT_TABLE" \
+                "$LAN_IF" \
+                "$NFT_SET" \
+                "$NFT_RULE_COMMENT"
+        fi
+    } > "$restore_file"
+
+    if ! nft -c -f "$restore_file"
+    then
+        rm -f "$restore_file"
+        echo 'VPN RESTORE NFTABLES SYNTAX: FAIL'
+        return 1
+    fi
+
+    echo 'VPN RESTORE NFTABLES SYNTAX: PASS'
+
+    if ! nft -f "$restore_file"
+    then
+        rm -f "$restore_file"
+        echo 'VPN RESTORE NFTABLES APPLY: FAIL'
+        return 1
+    fi
+
+    rm -f "$restore_file"
+
+    if ! after_rules="$(
+        nft -a list chain \
+            inet "$NFT_TABLE" forward
+    )"
+    then
+        echo 'Unable to verify restored rule: FAIL'
+        return 1
+    fi
+
+    after_rule_count="$(
+        awk \
+            -v needle="$NFT_RULE_COMMENT" '
+                index($0, needle) {
+                    count++
+                }
+
+                END {
+                    print count + 0
+                }
+            ' \
+            <<<"$after_rules"
+    )"
+
+    if [ "$after_rule_count" -ne 1 ]
+    then
+        echo "VPN BLOCK RULE COUNT AFTER RESTORE=$after_rule_count: FAIL"
+        return 1
+    fi
+
+    echo 'VPN ENDPOINT SET RESTORED: PASS'
+    echo 'VPN BLOCK RULE RESTORED: PASS'
+    echo "restored-ipv4=$ip_count"
+    echo "restored-cidrs=$cidr_count"
+    echo 'VPN CURRENT-DATABASE RESTORE: PASS'
+}
+
+BASE=/usr/local/lib/proton-router/vpn-block
+STATE=/var/lib/proton-router/vpn-block
+
+RUNROOT="$STATE/runs"
+LKG="$STATE/lkg"
+
+ENGINE="$BASE/normalize.py"
+PROTON_ADAPTER="$BASE/adapters/proton_adapter.py"
+NORD_ADAPTER="$BASE/adapters/nord_adapter.py"
+HIDEME_ADAPTER="$BASE/adapters/hideme_adapter.py"
+WINDSCRIBE_ADAPTER="$BASE/adapters/windscribe_adapter.py"
+PRIVADO_ADAPTER="$BASE/adapters/privado_adapter.py"
+TUNNELBEAR_ADAPTER="$BASE/adapters/tunnelbear_adapter.py"
+SURFSHARK_ADAPTER="$BASE/adapters/surfshark_adapter.py"
+PIA_ADAPTER="$BASE/adapters/pia_adapter.py"
+TOR_ADAPTER="$BASE/adapters/tor_adapter.py"
+
+EXPECTED_ENGINE_SHA='dab599746e3ade155ccfb2df6a021888bdc45a11ca72ac82817deb0ec0f29697'
+
+VPN_USER="${VPN_USER:-admin}"
+LAN_IF="${LAN_IF:-eth0}"
+
+NORD_URL='https://api.nordvpn.com/v1/servers?limit=1073741824'
+HIDEME_URL='https://api.hide.me/v1/network/paid/en'
+WINDSCRIBE_BASE='https://assets.windscribe.com/serverlist/mob-v2'
+PRIVADO_URL='https://utils.privadovpn.com/share/udp_tcp.zip'
+TUNNELBEAR_URL='https://tunnelbear.s3.amazonaws.com/support/linux/openvpn.zip'
+SURFSHARK_URL='https://surfshark.com/api/v1/server/configurations'
+PIA_URL='https://serverlist.piaservers.net/vpninfo/servers/v6'
+TOR_URL='https://onionoo.torproject.org/details?type=relay&running=true&fields=fingerprint,or_addresses,running'
+
+NFT_TABLE=router_filter
+NFT_SET=blocked_vpn_endpoints_v4
+NFT_RULE_COMMENT=PROTON_ROUTER_VPN_ENDPOINT_BLOCK_V1
+
+mkdir -p "$RUNROOT" "$LKG"
+
+#
+# Allow the unprivileged LAN web UI to traverse to the
+# published status file without exposing provider data,
+# run snapshots, or last-known-good adapter contents.
+#
+chmod 0711 "$STATE"
+
+#
+# All invocation paths use this same lock:
+#
+# CLI
+# Web UI
+# systemd timer
+#
+
+exec 9>/run/lock/proton-router-vpn-refresh.lock
+
+if ! flock -w 1800 9
+then
+    echo 'Unable to acquire VPN refresh lock'
+    exit 75
+fi
+
+REFRESH_MODE=refresh
+
+case "$#" in
+    0)
+        ;;
+
+    1)
+        if [ "$1" = '--restore-only' ]
+        then
+            REFRESH_MODE=restore-only
+        else
+            echo "Unknown argument: $1"
+            exit 64
+        fi
+        ;;
+
+    *)
+        echo 'Too many arguments'
+        exit 64
+        ;;
+esac
+
+if [ "$REFRESH_MODE" = 'restore-only' ]
+then
+    restore_current_firewall
+    exit $?
+fi
+
+report_progress 2 "Starting refresh"
+echo '=== PROTON ROUTER VPN ENDPOINT REFRESH ==='
+echo "started=$(date --iso-8601=seconds)"
+
+#
+# Normalization Engine v1 is frozen.
+#
+
+ENGINE_SHA="$(
+    sha256sum "$ENGINE" |
+    awk '{print $1}'
+)"
+
+printf 'normalization-engine-sha=%s\n' "$ENGINE_SHA"
+
+if [ "$ENGINE_SHA" != "$EXPECTED_ENGINE_SHA" ]
+then
+    echo 'NORMALIZATION ENGINE HASH MISMATCH: FAIL'
+    exit 1
+fi
+
+echo 'NORMALIZATION ENGINE V1 HASH: PASS'
+
+STAMP="$(
+    date -u '+%Y%m%dT%H%M%SZ'
+)"
+
+RUN="$RUNROOT/$STAMP-$$"
+
+mkdir -p "$RUN"
+
+VPN_HOME="$(
+    getent passwd "$VPN_USER" |
+    cut -d: -f6
+)"
+
+if [ -z "$VPN_HOME" ] || [ ! -d "$VPN_HOME" ]
+then
+    echo "Unable to determine home for $VPN_USER"
+    exit 1
+fi
+
+echo
+report_progress 10 "Refreshing Proton catalog"
+echo '=== PROTON ADAPTER SOURCE ==='
+
+PROTON_SOURCE="$VPN_HOME/.cache/Proton/VPN/serverlist.json"
+PROTON_TSV="$RUN/proton.tsv"
+PROTON_NEW=0
+PROTON_MODE=none
+
+#
+# Ask the official authenticated Proton client to
+# refresh its server information if Proton considers
+# that necessary.
+#
+
+VPN_UID="$(id -u "$VPN_USER")"
+VPN_RUNTIME="/run/user/$VPN_UID"
+VPN_BUS="$VPN_RUNTIME/bus"
+
+printf 'proton-runtime=%s\n' "$VPN_RUNTIME"
+
+if [ ! -S "$VPN_BUS" ]
+then
+    echo "proton-user-bus=WARNING missing=$VPN_BUS"
+fi
+
+if [ -S "$VPN_BUS" ] && \
+   timeout 120s \
+    runuser -u "$VPN_USER" -- \
+    env \
+        HOME="$VPN_HOME" \
+        XDG_RUNTIME_DIR="$VPN_RUNTIME" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$VPN_BUS" \
+    protonvpn servers \
+    >"$RUN/protonvpn-servers.out" \
+    2>&1
+then
+    echo 'proton-cli-refresh=PASS'
+else
+    RC="$?"
+    echo "proton-cli-refresh=WARNING exit=$RC"
+fi
+
+#
+# Whether or not the CLI performed a network fetch,
+# independently validate whatever official cache is
+# currently available.
+#
+
+if [ -s "$PROTON_SOURCE" ]
+then
+    cp \
+        "$PROTON_SOURCE" \
+        "$RUN/proton-serverlist.json"
+
+    if python3 "$PROTON_ADAPTER" \
+        --source "$RUN/proton-serverlist.json" \
+        --output "$PROTON_TSV"
+    then
+        PROTON_NEW=1
+        PROTON_MODE=current-cache
+    fi
+fi
+
+#
+# Provider-specific last-known-good fallback.
+#
+
+if [ ! -s "$PROTON_TSV" ]
+then
+    if [ -s "$LKG/proton.tsv" ]
+    then
+        cp \
+            "$LKG/proton.tsv" \
+            "$PROTON_TSV"
+
+        PROTON_MODE=last-known-good
+
+        echo 'PROTON ADAPTER: USING LAST-KNOWN-GOOD'
+    else
+        echo 'PROTON ADAPTER: FAIL - NO LAST-KNOWN-GOOD'
+        exit 1
+    fi
+fi
+
+printf 'proton-mode=%s\n' "$PROTON_MODE"
+
+echo
+report_progress 30 "Downloading Nord catalog"
+echo '=== NORD ADAPTER SOURCE ==='
+
+NORD_JSON="$RUN/nord-servers.json"
+NORD_TSV="$RUN/nord.tsv"
+NORD_NEW=0
+NORD_MODE=none
+
+if curl \
+    --fail \
+    --silent \
+    --show-error \
+    --compressed \
+    --connect-timeout 10 \
+    --max-time 120 \
+    --output "$NORD_JSON" \
+    "$NORD_URL"
+then
+    echo 'nord-download=PASS'
+
+    if python3 "$NORD_ADAPTER" \
+        --source "$NORD_JSON" \
+        --output "$NORD_TSV"
+    then
+        NORD_NEW=1
+        NORD_MODE=current-api
+    fi
+else
+    echo 'nord-download=WARNING'
+fi
+
+if [ ! -s "$NORD_TSV" ]
+then
+    if [ -s "$LKG/nord.tsv" ]
+    then
+        cp \
+            "$LKG/nord.tsv" \
+            "$NORD_TSV"
+
+        NORD_MODE=last-known-good
+
+        echo 'NORD ADAPTER: USING LAST-KNOWN-GOOD'
+    else
+        echo 'NORD ADAPTER: FAIL - NO LAST-KNOWN-GOOD'
+        exit 1
+    fi
+fi
+
+printf 'nord-mode=%s\n' "$NORD_MODE"
+
+echo
+report_progress 36 "Downloading hide.me catalog"
+echo '=== HIDEME ADAPTER SOURCE ==='
+
+HIDEME_SOURCE="$RUN/hideme.json"
+HIDEME_TSV="$RUN/hideme.tsv"
+HIDEME_NEW=0
+HIDEME_MODE=none
+
+if download_url \
+    hideme \
+    "$HIDEME_URL" \
+    "$HIDEME_SOURCE"
+then
+    if python3 "$HIDEME_ADAPTER" \
+        "$HIDEME_SOURCE" \
+        --output "$HIDEME_TSV" \
+        && validate_provider_tsv \
+            hideme \
+            "$HIDEME_TSV" \
+            50
+    then
+        HIDEME_NEW=1
+        HIDEME_MODE=current-api
+    else
+        rm -f "$HIDEME_TSV"
+    fi
+fi
+
+if [ ! -s "$HIDEME_TSV" ]
+then
+    if use_lkg_or_fail \
+        hideme \
+        "$HIDEME_TSV" \
+        50
+    then
+        HIDEME_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'hideme-mode=%s\n' "$HIDEME_MODE"
+
+echo
+report_progress 42 "Downloading Windscribe catalogs"
+echo '=== WINDSCRIBE ADAPTER SOURCE ==='
+
+WINDSCRIBE_REV="$(
+    date +%s
+)"
+
+WINDSCRIBE_FREE="$RUN/windscribe-0.json"
+WINDSCRIBE_PRO="$RUN/windscribe-1.json"
+WINDSCRIBE_TSV="$RUN/windscribe.tsv"
+WINDSCRIBE_NEW=0
+WINDSCRIBE_MODE=none
+WINDSCRIBE_FREE_OK=0
+WINDSCRIBE_PRO_OK=0
+
+if download_url \
+    windscribe-free \
+    "$WINDSCRIBE_BASE/0/$WINDSCRIBE_REV" \
+    "$WINDSCRIBE_FREE"
+then
+    WINDSCRIBE_FREE_OK=1
+fi
+
+if download_url \
+    windscribe-pro \
+    "$WINDSCRIBE_BASE/1/$WINDSCRIBE_REV" \
+    "$WINDSCRIBE_PRO"
+then
+    WINDSCRIBE_PRO_OK=1
+fi
+
+if [ "$WINDSCRIBE_FREE_OK" -eq 1 ] \
+    && [ "$WINDSCRIBE_PRO_OK" -eq 1 ]
+then
+    if python3 "$WINDSCRIBE_ADAPTER" \
+        "$WINDSCRIBE_FREE" \
+        "$WINDSCRIBE_PRO" \
+        --output "$WINDSCRIBE_TSV" \
+        && validate_provider_tsv \
+            windscribe \
+            "$WINDSCRIBE_TSV" \
+            500
+    then
+        WINDSCRIBE_NEW=1
+        WINDSCRIBE_MODE=current-mob-v2
+    else
+        rm -f "$WINDSCRIBE_TSV"
+    fi
+fi
+
+if [ ! -s "$WINDSCRIBE_TSV" ]
+then
+    if use_lkg_or_fail \
+        windscribe \
+        "$WINDSCRIBE_TSV" \
+        500
+    then
+        WINDSCRIBE_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'windscribe-mode=%s\n' "$WINDSCRIBE_MODE"
+
+echo
+report_progress 48 "Downloading PrivadoVPN configs"
+echo '=== PRIVADO ADAPTER SOURCE ==='
+
+PRIVADO_SOURCE="$RUN/privado.zip"
+PRIVADO_TSV="$RUN/privado.tsv"
+PRIVADO_NEW=0
+PRIVADO_MODE=none
+
+if download_url \
+    privado \
+    "$PRIVADO_URL" \
+    "$PRIVADO_SOURCE"
+then
+    if python3 "$PRIVADO_ADAPTER" \
+        "$PRIVADO_SOURCE" \
+        --output "$PRIVADO_TSV" \
+        && validate_provider_tsv \
+            privado \
+            "$PRIVADO_TSV" \
+            100
+    then
+        PRIVADO_NEW=1
+        PRIVADO_MODE=current-openvpn
+    else
+        rm -f "$PRIVADO_TSV"
+    fi
+fi
+
+if [ ! -s "$PRIVADO_TSV" ]
+then
+    if use_lkg_or_fail \
+        privado \
+        "$PRIVADO_TSV" \
+        100
+    then
+        PRIVADO_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'privado-mode=%s\n' "$PRIVADO_MODE"
+
+echo
+report_progress 54 "Downloading TunnelBear configs"
+echo '=== TUNNELBEAR ADAPTER SOURCE ==='
+
+TUNNELBEAR_SOURCE="$RUN/tunnelbear.zip"
+TUNNELBEAR_TSV="$RUN/tunnelbear.tsv"
+TUNNELBEAR_NEW=0
+TUNNELBEAR_MODE=none
+
+if download_url \
+    tunnelbear \
+    "$TUNNELBEAR_URL" \
+    "$TUNNELBEAR_SOURCE"
+then
+    if python3 "$TUNNELBEAR_ADAPTER" \
+        "$TUNNELBEAR_SOURCE" \
+        --output "$TUNNELBEAR_TSV" \
+        && validate_provider_tsv \
+            tunnelbear \
+            "$TUNNELBEAR_TSV" \
+            200
+    then
+        TUNNELBEAR_NEW=1
+        TUNNELBEAR_MODE=current-openvpn
+    else
+        rm -f "$TUNNELBEAR_TSV"
+    fi
+fi
+
+if [ ! -s "$TUNNELBEAR_TSV" ]
+then
+    if use_lkg_or_fail \
+        tunnelbear \
+        "$TUNNELBEAR_TSV" \
+        200
+    then
+        TUNNELBEAR_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'tunnelbear-mode=%s\n' "$TUNNELBEAR_MODE"
+
+echo
+report_progress 60 "Downloading Surfshark configs"
+echo '=== SURFSHARK ADAPTER SOURCE ==='
+
+SURFSHARK_SOURCE="$RUN/surfshark.zip"
+SURFSHARK_TSV="$RUN/surfshark.tsv"
+SURFSHARK_NEW=0
+SURFSHARK_MODE=none
+
+if download_url \
+    surfshark \
+    "$SURFSHARK_URL" \
+    "$SURFSHARK_SOURCE"
+then
+    if python3 "$SURFSHARK_ADAPTER" \
+        "$SURFSHARK_SOURCE" \
+        --output "$SURFSHARK_TSV" \
+        && validate_provider_tsv \
+            surfshark \
+            "$SURFSHARK_TSV" \
+            100
+    then
+        SURFSHARK_NEW=1
+        SURFSHARK_MODE=current-openvpn
+    else
+        rm -f "$SURFSHARK_TSV"
+    fi
+fi
+
+if [ ! -s "$SURFSHARK_TSV" ]
+then
+    if use_lkg_or_fail \
+        surfshark \
+        "$SURFSHARK_TSV" \
+        100
+    then
+        SURFSHARK_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'surfshark-mode=%s\n' "$SURFSHARK_MODE"
+
+echo
+report_progress 66 "Downloading PIA catalog"
+echo '=== PIA ADAPTER SOURCE ==='
+
+PIA_SOURCE="$RUN/pia-v6.txt"
+PIA_TSV="$RUN/pia.tsv"
+PIA_NEW=0
+PIA_MODE=none
+
+if download_url \
+    pia \
+    "$PIA_URL" \
+    "$PIA_SOURCE"
+then
+    if python3 "$PIA_ADAPTER" \
+        "$PIA_SOURCE" \
+        --output "$PIA_TSV" \
+        && validate_provider_tsv \
+            pia \
+            "$PIA_TSV" \
+            500
+    then
+        PIA_NEW=1
+        PIA_MODE=current-serverlist-v6
+    else
+        rm -f "$PIA_TSV"
+    fi
+fi
+
+if [ ! -s "$PIA_TSV" ]
+then
+    if use_lkg_or_fail \
+        pia \
+        "$PIA_TSV" \
+        500
+    then
+        PIA_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'pia-mode=%s\n' "$PIA_MODE"
+
+echo
+echo
+report_progress 70 "Downloading Tor running-relay catalog"
+echo '=== TOR ADAPTER SOURCE ==='
+
+TOR_SOURCE="$RUN/tor-onionoo.json"
+TOR_TSV="$RUN/tor.tsv"
+TOR_NEW=0
+TOR_MODE=none
+
+if /usr/bin/curl \
+    --fail \
+    --location \
+    --silent \
+    --show-error \
+    --compressed \
+    --connect-timeout 15 \
+    --max-time 180 \
+    --retry 2 \
+    --retry-delay 2 \
+    --user-agent 'proton-router-tor-adapter/1.0' \
+    --output "$TOR_SOURCE" \
+    "$TOR_URL"
+then
+    if validate_tor_source \
+        "$TOR_SOURCE"
+    then
+        if python3 "$TOR_ADAPTER" \
+            "$TOR_SOURCE" \
+            --output "$TOR_TSV" \
+            && validate_tor_tsv \
+                "$TOR_TSV"
+        then
+            TOR_NEW=1
+            TOR_MODE=current-onionoo
+        else
+            rm -f "$TOR_TSV"
+        fi
+    else
+        rm -f "$TOR_SOURCE"
+    fi
+fi
+
+if [ ! -s "$TOR_TSV" ]
+then
+    echo 'Tor current source unavailable or invalid; trying LKG'
+
+    if [ -s "$LKG/tor.tsv" ]
+    then
+        install \
+            -m 0600 \
+            "$LKG/tor.tsv" \
+            "$TOR_TSV"
+
+        if validate_tor_tsv \
+            "$TOR_TSV"
+        then
+            TOR_MODE=last-known-good
+        else
+            rm -f "$TOR_TSV"
+            echo 'Tor LKG validation failed' >&2
+            exit 1
+        fi
+    else
+        echo 'Tor LKG unavailable' >&2
+        exit 1
+    fi
+fi
+
+printf 'tor-mode=%s\n' "$TOR_MODE"
+
+
+report_progress 82 "Normalizing 9-source endpoint set"
+
+NORMALIZED="$RUN/normalized"
+
+python3 "$ENGINE" \
+    --input "$PROTON_TSV" \
+    --input "$NORD_TSV" \
+    --input "$HIDEME_TSV" \
+    --input "$WINDSCRIBE_TSV" \
+    --input "$PRIVADO_TSV" \
+    --input "$TUNNELBEAR_TSV" \
+    --input "$SURFSHARK_TSV" \
+    --input "$PIA_TSV" \
+    --input "$TOR_TSV" \
+    --out-dir "$NORMALIZED"
+
+IPV4="$NORMALIZED/normalized-ipv4.txt"
+CIDRS="$NORMALIZED/normalized-ipv4-cidrs.txt"
+
+IP_COUNT="$(
+    wc -l < "$IPV4"
+)"
+
+CIDR_COUNT="$(
+    wc -l < "$CIDRS"
+)"
+
+printf 'normalized-ipv4=%s\n' "$IP_COUNT"
+printf 'normalized-ipv4-cidrs=%s\n' "$CIDR_COUNT"
+
+#
+# Additional deployment safety gates.
+#
+
+if [ "$IP_COUNT" -lt 15000 ]
+then
+    echo 'NORMALIZED DATASET SUSPICIOUSLY SMALL: FAIL'
+    exit 1
+fi
+
+for CONTROL in \
+    1.1.1.1 \
+    8.8.8.8 \
+    104.20.23.154
+do
+    if grep -Fxq "$CONTROL" "$IPV4"
+    then
+        echo "CONTROL ADDRESS PRESENT: $CONTROL"
+        exit 1
+    fi
+done
+
+echo 'NORMALIZED CONTROL CHECK: PASS'
+
+echo
+report_progress 86 "Preparing firewall update"
+echo '=== PREPARE NFTABLES UPDATE ==='
+
+if ! nft list table \
+    inet "$NFT_TABLE" \
+    >/dev/null 2>&1
+then
+    echo "Required nftables table missing: $NFT_TABLE"
+    exit 1
+fi
+
+SET_EXISTED=1
+
+if ! nft list set \
+    inet "$NFT_TABLE" "$NFT_SET" \
+    >/dev/null 2>&1
+then
+    SET_EXISTED=0
+
+    nft add set \
+        inet "$NFT_TABLE" "$NFT_SET" \
+        '{ type ipv4_addr; flags interval; auto-merge; }'
+
+    echo 'Created live VPN endpoint set'
+fi
+
+APPLY="$RUN/apply.nft"
+
+{
+    printf 'flush set inet %s %s\n' \
+        "$NFT_TABLE" \
+        "$NFT_SET"
+
+    printf 'add element inet %s %s {\n' \
+        "$NFT_TABLE" \
+        "$NFT_SET"
+
+    awk '
+        {
+            lines[NR] = $0
+        }
+
+        END {
+            for (i = 1; i <= NR; i++) {
+                printf "    %s%s\n",
+                    lines[i],
+                    (i < NR ? "," : "")
+            }
+        }
+    ' "$CIDRS"
+
+    printf '}\n'
+
+} > "$APPLY"
+
+#
+# nft -c changes nothing.
+#
+
+nft -c -f "$APPLY"
+
+echo 'NFTABLES CANDIDATE SYNTAX: PASS'
+
+#
+# nftables applies a batch transaction atomically.
+# Existing readers continue using the existing set
+# until the transaction commits.
+#
+
+if ! nft -f "$APPLY"
+then
+    echo 'NFTABLES UPDATE: FAIL'
+
+    if [ "$SET_EXISTED" -eq 0 ]
+    then
+        nft delete set \
+            inet "$NFT_TABLE" "$NFT_SET" \
+            2>/dev/null || true
+    fi
+
+    exit 1
+fi
+
+echo 'NFTABLES SET UPDATE: PASS'
+
+#
+# The rule is installed only after the set contains
+# a validated dataset.
+#
+# It matches forwarded LAN traffic only. Pi-originated
+# Proton traffic does not traverse this rule.
+#
+
+FORWARD_RULES="$(
+    nft -a list chain \
+        inet "$NFT_TABLE" forward
+)"
+
+RULE_COUNT="$(
+    awk \
+        -v needle="$NFT_RULE_COMMENT" '
+            index($0, needle) {
+                count++
+            }
+
+            END {
+                print count + 0
+            }
+        ' \
+        <<<"$FORWARD_RULES"
+)"
+
+case "$RULE_COUNT" in
+    0)
+        nft insert rule \
+            inet "$NFT_TABLE" forward \
+            iifname "$LAN_IF" \
+            ip daddr "@$NFT_SET" \
+            counter \
+            drop \
+            comment "$NFT_RULE_COMMENT"
+
+        echo 'VPN BLOCK RULE INSTALLED: PASS'
+        ;;
+
+    1)
+        echo 'VPN BLOCK RULE ALREADY PRESENT: PASS'
+        ;;
+
+    *)
+        echo "VPN BLOCK RULE DUPLICATE COUNT=$RULE_COUNT: FAIL"
+        exit 1
+        ;;
+esac
+
+#
+# Only after the complete refresh succeeds do new
+# adapter results become last-known-good.
+#
+
+if [ "$PROTON_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$PROTON_TSV" \
+        "$LKG/proton.tsv"
+fi
+
+if [ "$NORD_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$NORD_TSV" \
+        "$LKG/nord.tsv"
+fi
+
+if [ "$HIDEME_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$HIDEME_TSV" \
+        "$LKG/hideme.tsv"
+fi
+
+if [ "$WINDSCRIBE_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$WINDSCRIBE_TSV" \
+        "$LKG/windscribe.tsv"
+fi
+
+if [ "$PRIVADO_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$PRIVADO_TSV" \
+        "$LKG/privado.tsv"
+fi
+
+if [ "$TUNNELBEAR_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$TUNNELBEAR_TSV" \
+        "$LKG/tunnelbear.tsv"
+fi
+
+if [ "$SURFSHARK_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$SURFSHARK_TSV" \
+        "$LKG/surfshark.tsv"
+fi
+
+if [ "$PIA_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$PIA_TSV" \
+        "$LKG/pia.tsv"
+fi
+
+if [ "$TOR_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$TOR_TSV" \
+        "$LKG/tor.tsv"
+fi
+
+
+
+
+
+
+#
+# Publish useful current-state files for CLI/web UI.
+#
+
+CURRENT_NEW="$STATE/current.new.$$"
+
+rm -rf "$CURRENT_NEW"
+
+mkdir -p "$CURRENT_NEW"
+
+cp \
+    "$NORMALIZED/normalized-ipv4.txt" \
+    "$CURRENT_NEW/"
+
+cp \
+    "$NORMALIZED/normalized-ipv4-cidrs.txt" \
+    "$CURRENT_NEW/"
+
+cp \
+    "$NORMALIZED/provenance.tsv" \
+    "$CURRENT_NEW/"
+
+cat > "$CURRENT_NEW/status" <<EOF
+updated=$(date --iso-8601=seconds)
+proton_mode=$PROTON_MODE
+nord_mode=$NORD_MODE
+hideme_mode=$HIDEME_MODE
+windscribe_mode=$WINDSCRIBE_MODE
+privado_mode=$PRIVADO_MODE
+tunnelbear_mode=$TUNNELBEAR_MODE
+surfshark_mode=$SURFSHARK_MODE
+pia_mode=$PIA_MODE
+tor_mode=$TOR_MODE
+ipv4_count=$IP_COUNT
+cidr_count=$CIDR_COUNT
+engine_sha=$ENGINE_SHA
+EOF
+
+#
+# Expose only the small status file to the admin-owned
+# web UI. The normalized database and provenance remain
+# mode 0600 under the refresh command's umask.
+#
+chmod 0711 "$CURRENT_NEW"
+chmod 0644 "$CURRENT_NEW/status"
+
+rm -rf "$STATE/current"
+
+mv \
+    "$CURRENT_NEW" \
+    "$STATE/current"
+
+#
+# Keep the most recent eight diagnostic runs.
+#
+
+mapfile -t OLD_RUNS < <(
+    find "$RUNROOT" \
+        -mindepth 1 \
+        -maxdepth 1 \
+        -type d \
+        -printf '%T@ %p\n' |
+    sort -nr |
+    tail -n +9 |
+    cut -d' ' -f2-
+)
+
+for OLD_RUN in "${OLD_RUNS[@]:-}"
+do
+    [ -n "$OLD_RUN" ] || continue
+    rm -rf "$OLD_RUN"
+done
+
+echo
+report_progress 96 "Publishing refreshed database"
+echo '=== REFRESH RESULT ==='
+
+cat "$STATE/current/status"
+
+echo
+echo '=== ACTIVE RULE ==='
+
+nft -a list chain \
+    inet "$NFT_TABLE" forward |
+grep -F "$NFT_RULE_COMMENT"
+
+echo
+echo "completed=$(date --iso-8601=seconds)"
+report_progress 100 "Complete"
+echo 'VPN ENDPOINT REFRESH: PASS'

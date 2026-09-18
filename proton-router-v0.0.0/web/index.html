@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proton Router</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div>
+        <div class="brand-title">Proton Router</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="hero-grid" aria-label="Router status">
+
+      <article class="card status-card">
+        <div class="card-heading">
+          <div class="title-with-info">
+            <h2>WAN</h2>
+            <span
+              class="info-tip"
+              tabindex="0"
+              role="img"
+              aria-label="WAN information"
+              data-tip="Your ISP-facing Ethernet connection. The router uses this link to reach the internet and establish Proton VPN."
+            >i</span>
+          </div>
+          <span id="wanDot" class="status-dot neutral" aria-hidden="true"></span>
+        </div>
+
+
+        <dl class="status-list">
+          <div>
+            <dt>
+              Gateway
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="Gateway information"
+                data-tip="The ISP gateway your router uses to reach the internet."
+              >i</span>
+            </dt>
+            <dd id="wanGateway">—</dd>
+          </div>
+          <div>
+            <dt>
+              LAN
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="LAN information"
+                data-tip="The router's local IP address used by devices on your home network."
+              >i</span>
+            </dt>
+            <dd id="lanAddress">—</dd>
+          </div>
+          <div>
+            <dt>
+              Interface
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="Interface information"
+                data-tip="The Ethernet interface assigned to your local network."
+              >i</span>
+            </dt>
+            <dd id="lanInterface">—</dd>
+          </div>
+        </dl>
+      </article>
+
+      <article class="card status-card">
+        <div class="card-heading">
+          <div class="title-with-info">
+            <h1>Proton VPN</h1>
+            <span
+              class="info-tip"
+              tabindex="0"
+              role="img"
+              aria-label="Proton VPN information"
+              data-tip="The VPN tunnel used by normal LAN clients. When connected, clients not configured for bypass send their internet traffic through Proton VPN."
+            >i</span>
+          </div>
+          <span id="protonDot" class="status-dot neutral" aria-hidden="true"></span>
+        </div>
+
+
+        <dl class="status-list">
+          <div>
+            <dt>
+              Server
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="Server information"
+                data-tip="The Proton VPN server currently carrying your routed traffic."
+              >i</span>
+            </dt>
+            <dd id="protonServer">—</dd>
+          </div>
+          <div>
+            <dt>
+              Protocol
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="Protocol information"
+                data-tip="The VPN connection method currently being used by Proton VPN."
+              >i</span>
+            </dt>
+            <dd id="protonProtocol">—</dd>
+          </div>
+          <div>
+            <dt>
+              Load
+              <span
+                class="info-tip"
+                tabindex="0"
+                role="img"
+                aria-label="Server load information"
+                data-tip="How busy the current Proton VPN server is. Lower is generally better."
+              >i</span>
+            </dt>
+            <dd id="protonLoad">—</dd>
+          </div>
+        </dl>
+      </article>
+
+    </section>
+
+    <section id="vpnBlockCard" class="card clients-card">
+      <div class="clients-header">
+        <div class="title-with-info">
+          <h2>VPN Endpoint Blocking</h2>
+          <span
+            class="info-tip"
+            tabindex="0"
+            role="img"
+            aria-label="VPN endpoint blocking information"
+            data-tip="Blocks LAN clients from connecting directly to known commercial VPN server endpoints. The endpoint database refreshes automatically every six hours."
+          >i</span>
+        </div>
+
+        <div class="vpn-block-controls">
+
+
+          <button
+            id="vpnBlockRefreshButton"
+            class="secondary-button"
+            type="button"
+          >
+            Refresh Endpoints
+          </button>
+        </div>
+      </div>
+
+
+
+      <div
+        id="vpnBlockMessage"
+        class="message"
+        hidden
+      ></div>
+
+      <div
+        id="vpnBlockProgress"
+        class="vpn-progress"
+        hidden
+      >
+        <div class="vpn-progress-heading">
+          <span id="vpnBlockProgressLabel">
+            Starting refresh...
+          </span>
+
+          <span
+            id="vpnBlockProgressPercent"
+            class="mono"
+          >
+            0%
+          </span>
+        </div>
+
+        <progress
+          id="vpnBlockProgressBar"
+          max="100"
+          value="0"
+        >
+          0%
+        </progress>
+      </div>
+
+      <dl class="status-list">
+        <div>
+          <dt>Endpoints</dt>
+          <dd id="vpnBlockEndpointCount">—</dd>
+        </div>
+
+        <div>
+          <dt>Normalized CIDRs</dt>
+          <dd id="vpnBlockCidrCount">—</dd>
+        </div>
+
+        <div>
+          <dt>Last updated</dt>
+          <dd id="vpnBlockUpdated">—</dd>
+        </div>
+
+        <div>
+          <dt>Next automatic refresh</dt>
+          <dd id="vpnBlockNext">—</dd>
+        </div>
+
+        
+
+        
+      </dl>
+
+    </section>
+
+    <section id="clientsCard" class="card clients-card" hidden>
+      <div class="clients-header">
+        <div class="title-with-info">
+          <h2>LAN Clients</h2>
+          <span
+            class="info-tip"
+            tabindex="0"
+            role="img"
+            aria-label="LAN clients information"
+            data-tip="Choose which known LAN clients bypass Proton and use the raw ISP WAN."
+          >i</span>
+        </div>
+
+        <button id="refreshButton" class="secondary-button" type="button">
+          Refresh
+        </button>
+      </div>
+
+      <div class="summary-row" aria-label="Client counts">
+        <div>
+          <span id="totalCount" class="summary-number">0</span>
+          <span>Total</span>
+        </div>
+        <div>
+          <span id="onlineCount" class="summary-number">0</span>
+          <span>Online</span>
+        </div>
+        <div>
+          <span id="bypassCount" class="summary-number">0</span>
+          <span>Bypass</span>
+        </div>
+      </div>
+
+      <div id="message" class="message" hidden></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>IP address</th>
+              <th>MAC address</th>
+              <th>Status</th>
+              <th>Route</th>
+              <th class="action-column" aria-label="Routing action"></th>
+            </tr>
+          </thead>
+          <tbody id="clientRows">
+            <tr>
+              <td class="empty" colspan="6">
+                Loading clients...
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

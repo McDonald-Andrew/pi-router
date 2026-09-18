@@ -1,0 +1,546 @@
+:root {
+  color: #000;
+  font-family: Arial, Helvetica, sans-serif;
+background: #f4f5f6;
+  font-synthesis: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f4f5f6;
+  color: #000;
+}
+
+button {
+  font: inherit;
+}
+
+/* Header */
+
+.topbar {
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 3px solid #6d4aff;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+}
+
+
+.brand-title {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+
+
+/* Page */
+
+.shell {
+  width: min(1120px, calc(100% - 40px));
+  margin: 24px auto 40px;
+}
+
+/* Shared boxes */
+
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #d8dde1;
+  border-radius: 3px;
+}
+
+.status-card {
+  padding: 20px;
+}
+
+.card-heading,
+.clients-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+h1,
+h2 {
+  margin: 0;
+font-size: 18px;
+  font-weight: 600;
+}
+
+/* Title + information tooltip */
+
+.title-with-info {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.info-tip {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 14px;
+  border: 1px solid #6d4aff;
+  border-radius: 50%;
+background: #fff;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  outline: none;
+  color: #6d4aff;
+}
+
+
+
+.info-tip:hover,
+.info-tip:focus {
+background: #fff;
+  color: #6d4aff;
+}
+
+.info-tip::before {
+  content: "";
+  position: absolute;
+  z-index: 30;
+  top: 50%;
+  left: calc(100% + 1px);
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  border-right-color: #d8dde1;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.info-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 29;
+  top: 50%;
+  left: calc(100% + 11px);
+  width: 280px;
+  max-width: 70vw;
+  padding: 9px 11px;
+  border-radius: 3px;
+  background: #d8dde1;
+font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: none;
+  transform: translateY(-50%);
+  opacity: 0;
+  pointer-events: none;
+  border: 1px solid #d8dde1;
+  color: #000;
+}
+
+.info-tip:hover::before,
+.info-tip:hover::after,
+.info-tip:focus::before,
+.info-tip:focus::after {
+  opacity: 1;
+}
+
+/* Status */
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+}
+
+.status-dot.good {
+  background: #39a96b;
+}
+
+.status-dot.bad {
+  background: #d9534f;
+}
+
+.status-dot.neutral {
+  background: #aaa;
+}
+
+.status-list {
+  margin: 0;
+}
+
+.status-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid #eee;
+}
+
+.status-list dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+font-size: 13px;
+  font-weight: 500;
+}
+
+.status-list dd {
+  margin: 0;
+text-align: right;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Clients */
+
+.clients-card {
+  padding: 20px;
+}
+
+.secondary-button {
+  padding: 7px 14px;
+  border: 1px solid #bfc7cc;
+  border-radius: 3px;
+  background: #fff;
+cursor: pointer;
+  font-size: 13px;
+}
+
+.secondary-button:hover {
+  background: #f3f5f6;
+}
+
+
+/* Counts */
+
+.summary-row {
+  display: flex;
+  gap: 36px;
+  margin: 18px 0;
+  padding: 12px 0;
+  border-top: 1px solid #eee;
+  border-bottom: 1px solid #eee;
+font-size: 13px;
+}
+
+.summary-row div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.summary-number {
+font-size: 18px;
+  font-weight: 600;
+}
+
+/* Messages */
+
+.message {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border: 1px solid;
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+.message.success {
+  border-color: #a9d5bb;
+  background: #f1faf5;
+}
+
+.message.error {
+  border-color: #e0b2b2;
+  background: #fff5f5;
+}
+
+/* Client table */
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  padding: 10px 9px;
+  border-top: 1px solid #d8dde1;
+  border-bottom: 1px solid #ccd3d7;
+  background: #f7f8f9;
+font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+
+td {
+  padding: 12px 9px;
+  border-bottom: 1px solid #e8ebed;
+  vertical-align: middle;
+}
+
+tbody tr:hover {
+  background: #fafbfb;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.device-name {
+font-weight: 500;
+}
+
+
+.mono {
+  font-family: Arial, Helvetica, sans-serif;
+font-size: 13px;
+}
+
+/* Route/status labels */
+
+.badge {
+  display: inline-block;
+  min-width: 58px;
+  padding: 3px 7px;
+border-radius: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  white-space: nowrap;
+}
+
+/*
+ * Proton's published visual system uses Proton purple as its base
+ * ecosystem color. #6D4AFF is the Proton brand purple referenced
+ * by media-kit-derived brand assets.
+ */
+.badge.proton {
+color: #fff;
+  background: transparent;
+  color: #6d4aff;
+}
+
+.badge.bypass {
+color: #777;
+  background: transparent;
+  color: #000;
+}
+
+.badge.online {
+  background: transparent;
+  color: #39a96b;
+}
+
+.badge.offline {
+color: #777;
+  background: transparent;
+  color: #000;
+}
+
+/* Actions */
+
+.action-column {
+  text-align: right;
+}
+
+.toggle-button {
+  min-width: 88px;
+  padding: 6px 10px;
+  border: 1px solid;
+  border-radius: 3px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.toggle-button.add {
+  border-color: #bbb;
+  background: #fff;
+  color: #000;
+}
+
+.toggle-button.add:hover {
+  background: #f2f3f4;
+  color: #000;
+}
+
+.toggle-button.remove {
+  border-color: #6d4aff;
+  background: #6d4aff;
+  color: #fff;
+}
+
+.toggle-button.remove:hover {
+  background: #372580;
+  border-color: #372580;
+  color: #fff;
+}
+
+.toggle-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.empty {
+  padding: 30px 10px;
+  text-align: center;
+}
+
+/* Footer */
+
+
+
+/* Mobile */
+
+@media (max-width: 760px) {
+  .topbar {
+    height: auto;
+    min-height: 60px;
+    padding: 12px 16px;
+  }
+
+  .shell {
+    width: calc(100% - 20px);
+    margin-top: 12px;
+  }
+
+  .hero-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .status-card,
+  .clients-card {
+    padding: 14px;
+  }
+
+  .summary-row {
+    gap: 20px;
+    overflow-x: auto;
+  }
+
+  .info-tip::after {
+    width: 230px;
+  }
+
+  th:nth-child(3),
+  td:nth-child(3),
+  th:nth-child(4),
+  td:nth-child(4) {
+    display: none;
+  }
+}
+
+/* VPN endpoint refresh progress */
+
+.vpn-progress {
+  margin: 0 0 1.25rem;
+}
+
+#vpnBlockMessage {
+  margin-bottom: 0.75rem;
+}
+
+.vpn-progress-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.9rem;
+}
+
+.vpn-progress progress {
+  display: block;
+  width: 100%;
+  height: 1rem;
+
+  appearance: none;
+  -webkit-appearance: none;
+
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+
+  background-color: #ececf1;
+  accent-color: #6d4aff;
+}
+
+.vpn-progress progress::-webkit-progress-bar {
+  background-color: #ececf1;
+  border-radius: 999px;
+}
+
+.vpn-progress progress::-webkit-progress-value {
+  background: #6d4aff !important;
+  background-color: #6d4aff !important;
+  border-radius: 999px;
+}
+
+.vpn-progress progress::-moz-progress-bar {
+  background: #6d4aff !important;
+  background-color: #6d4aff !important;
+  border-radius: 999px;
+}
+
+/* Status-card subtitle replacement spacing */
+
+/*
+ * Ready / Connected subtitle text was removed,
+ * but preserve a small amount of breathing room
+ * beneath the WAN and Proton headings.
+ */
+.status-card .card-heading {
+  margin-bottom: 0.75rem;
+}
+
+/*
+ * The VPN block heading also lost its text-state
+ * row, so retain a small gap before its contents.
+ */
+#vpnBlockCard .clients-header {
+  margin-bottom: 0.75rem;
+}
+
+/*
+ * VPN status dot stays directly above Refresh
+ * Endpoints, with both controls anchored to the
+ * right side of the card.
+ */
+.vpn-block-controls {
+  margin-left: auto;
+}
+
+/* Match VPN/client card spacing to hero section spacing */
+#vpnBlockCard {
+  margin-bottom: 16px;
+}

@@ -1,0 +1,28 @@
+# Raspberry Pi Proton Router configuration
+
+# Router administration account
+ROUTER_USER="admin"
+
+# Desktop session used for unattended autologin
+ROUTER_SESSION="rpd-labwc"
+
+# Network roles
+LAN_IF="eth0"
+WAN_IF="eth1"
+
+# LAN configuration
+LAN_ADDR="192.168.50.1"
+LAN_PREFIX="24"
+
+# DHCP pool
+DHCP_START="192.168.50.100"
+DHCP_END="192.168.50.220"
+DHCP_LEASE="12h"
+
+# Cloudflare Families DNS (No Malware or Adult Content)
+DNS_UPSTREAM="1.1.1.3"
+
+# Proton-bypass internals
+BYPASS_MARK="0x50564250"
+BYPASS_TABLE="200"
+BYPASS_RULE_PRIORITY="10000"

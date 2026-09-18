@@ -1,0 +1,75 @@
+#!/bin/sh
+set -eu
+
+CONFIG_FILE="/etc/proton-router.conf"
+
+[ -r "$CONFIG_FILE" ] || exit 1
+. "$CONFIG_FILE"
+
+[ -n "${WAN_IF:-}" ] || exit 1
+
+close_bootstrap() {
+    sudo -n /usr/sbin/nft flush chain inet router_filter host_wan_bootstrap \
+        2>/dev/null || true
+}
+
+# Always fail closed when this script exits.
+trap close_bootstrap EXIT
+
+# Signals also cause an exit, which triggers close_bootstrap.
+trap 'exit 1' HUP INT TERM
+
+# Wait for the configured WAN to receive a usable IPv4 default route.
+i=0
+while ! /usr/sbin/ip -4 route show default dev "$WAN_IF" |
+    grep -q '^default '
+do
+    i=$((i + 1))
+    [ "$i" -ge 60 ] && exit 1
+    sleep 1
+done
+
+# Wait for the desktop Secret Service/keyring.
+i=0
+while ! busctl --user --list 2>/dev/null | grep -q '^org.freedesktop.secrets'; do
+    i=$((i + 1))
+    [ "$i" -ge 30 ] && exit 1
+    sleep 1
+done
+
+# If Proton is already connected, leave the bootstrap gate closed.
+if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
+    exit 0
+fi
+
+# Start from a closed gate, then temporarily permit Pi-originated
+# raw-WAN traffic so Proton can refresh DNS/API/server information.
+close_bootstrap
+sudo -n /usr/sbin/nft add rule inet router_filter host_wan_bootstrap accept
+
+# Proton can occasionally fail its first managed WireGuard connection while the local agent/session is settling.
+# Keep the bootstrap gate open across a small number of bounded retries.
+# The EXIT trap above still closes raw-WAN bootstrap on every success or failure path.
+attempt=1
+max_attempts=3
+
+while [ "$attempt" -le "$max_attempts" ]; do
+    if timeout 90s protonvpn connect; then
+        exit 0
+    fi
+
+    # Be conservative: if the CLI returned non-zero but Proton actually
+    # reached Connected state, treat the connection as successful.
+    if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
+        exit 0
+    fi
+
+    if [ "$attempt" -ge "$max_attempts" ]; then
+        echo "protonvpn-autoconnect: failed after $max_attempts attempts" >&2
+        exit 1
+    fi
+
+    echo "protonvpn-autoconnect: connect attempt $attempt failed; retrying in 5 seconds..." >&2
+    sleep 5
+    attempt=$((attempt + 1))
+done

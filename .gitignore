@@ -1,0 +1,35 @@
+# Secrets and credentials
+*.key
+*.pem
+*.p12
+*.pfx
+*.credentials
+*.keyring
+user.keystore
+proton0.conf
+
+# Machine/runtime-generated configuration
+generated-vars.nft
+generated-vars.conf
+devices.conf
+
+# Backups and editor files
+*.bak
+*.backup
+*.pre-*
+*~
+*.swp
+
+# Archives
+*.tar
+*.tar.gz
+*.tgz
+
+*.sha256.txt
+
+# Windows installer
+bin/
+obj/
+publish/
+*.user
+*.suo

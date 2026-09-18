@@ -1,0 +1,14 @@
+[Unit]
+Description=Proton VPN automatic connection
+Wants=gnome-keyring-daemon.service
+After=gnome-keyring-daemon.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/protonvpn-autoconnect
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=default.target
