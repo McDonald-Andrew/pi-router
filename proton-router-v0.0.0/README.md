@@ -14,7 +14,7 @@ A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with pe
 - Automatic endpoint refresh every six hours
 - Local web UI for router/VPN status, endpoint-block status, and client bypass control
 - Manual endpoint block list refresh from local web UI
-- Dynamic blocking of known commercial VPN, Tor relay endpoints
+- Dynamic blocking of known commercial VPN and Tor relay endpoints
 - Static DNS blocking for selected proxy/remote-browser domains
 - Windows installer and manual Linux install steps available
 
@@ -56,6 +56,10 @@ ISP modem / upstream router
         +-- selected clients ----> raw ISP WAN bypass
 ```
 
+The downstream wireless device is used in access-point/bridge mode rather than router/NAT mode. Connect the Pi's `eth0` LAN interface to a LAN port on the access point. The access point's WAN/routing function is not used.
+
+The Raspberry Pi is the router. `eth1` is its upstream/WAN interface and `eth0` is its downstream/LAN interface. Keeping the access point bridged allows the Pi to see and apply policy to individual LAN clients.
+
 Default example LAN:
 
 ```text
@@ -78,7 +82,7 @@ The router is designed to fail closed:
 - normal LAN clients cannot fall back to raw WAN if Proton is unavailable
 - bypass clients use a dedicated policy-routing table
 - the bypass table contains a blackhole default when usable WAN routing is unavailable
-- Pi-originated raw-WAN traffic is blocked except through the dedicated Proton transport/bootstrap paths
+- Raw WAN traffic from the Pi is blocked except for WAN DHCP and the dedicated Proton VPN transport
 - the temporary Proton bootstrap gate is closed again on success and failure
 
 The default bypass routing internals are:
@@ -211,7 +215,7 @@ The UI can:
 
 The backend exposes purpose-specific API routes rather than a general shell endpoint.
 
-The web service is bound by router policy to the trusted LAN/loopback path and should never be exposed through the WAN.
+The web server listens on IPv4 port 8080, while the router's nftables input policy permits access from the LAN and loopback and drops unsolicited WAN input. The web interface should never be exposed by adding a WAN allow rule or port forward.
 
 ## Proton VPN behavior
 
@@ -322,7 +326,7 @@ sudo proton-router-apply-conf
 - dnsmasq variables
 - LightDM autologin configuration
 - NetworkManager polkit policy
-- restricted sudoers policy
+- restricted sudoers policy for Proton VPN, web bypass add/remove operations, and exact endpoint refresh service
 - keyring initialization service
 - bypass routing state
 
@@ -412,6 +416,8 @@ WAN DHCP retries continue independently.
 │   └── protonvpn-autoconnect
 └── web/
     ├── app.js
+    ├── favicon.ico
+    ├── favicon.svg
     ├── index.html
     ├── server.py
     └── styles.css
