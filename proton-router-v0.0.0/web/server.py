@@ -1705,13 +1705,11 @@ class Handler(
     ) -> None:
         routes = {
             "/": "index.html",
-            "/index.html": (
-                "index.html"
-            ),
+            "/index.html": "index.html",
             "/app.js": "app.js",
-            "/styles.css": (
-                "styles.css"
-            ),
+            "/styles.css": "styles.css",
+            "/favicon.svg": "favicon.svg",
+            "/favicon.ico": "favicon.ico"
         }
 
         filename = routes.get(
