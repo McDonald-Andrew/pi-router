@@ -4,23 +4,19 @@ A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with pe
 
 ## Features
 
-- Ethernet WAN and LAN routing
+- 1 GBps Ethernet WAN and LAN routing
 - Proton VPN for normal LAN client traffic
-- Per-device raw-WAN bypass with fail-closed policy routing
+- Device raw-WAN Proton VPN bypass with fail-closed policy routing
 - Cloudflare Families DNS (`1.1.1.3`) by default
-- LAN DNS redirection and common encrypted-DNS blocking
-- Static DNS blocking for selected proxy/remote-browser domains
-- Dynamic blocking of known commercial VPN and Tor relay endpoints
-- Last-known-good fallback for individual endpoint-provider feeds
+- Automatic Proton VPN reconnection after boot
+- Bounded Proton VPN connection retries for transient session failures
+- Automatic empty-password GNOME login keyring initialization for unattended Proton VPN startup
 - Automatic endpoint refresh every six hours
-- Manual endpoint refresh from the local web UI
-- Dynamic ISP DHCP support on WAN
-- Automatic Proton reconnection after boot
-- Bounded Proton connection retries for transient local-agent/session failures
-- Automatic empty-password GNOME login keyring initialization for unattended Proton startup
-- Local web UI for router/VPN status, endpoint-block status, and per-client bypass control
-- Centralized router settings in `/etc/proton-router.conf`
-- Phase-based installer used by both the Windows installer and the manual Linux procedure
+- Local web UI for router/VPN status, endpoint-block status, and client bypass control
+- Manual endpoint block list refresh from local web UI
+- Dynamic blocking of known commercial VPN, Tor relay endpoints
+- Static DNS blocking for selected proxy/remote-browser domains
+- Windows installer and manual Linux install steps available
 
 ## Tested platform
 
