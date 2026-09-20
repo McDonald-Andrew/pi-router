@@ -2,6 +2,5 @@
 wireguard-tools
 
 # Diagnostics/testing only
-curl
 tcpdump
 bind9-dnsutils

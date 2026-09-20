@@ -1,0 +1,7 @@
+* text=auto
+
+setup text eol=lf
+scripts/* text eol=lf
+config/*.service text eol=lf
+config/*.timer text eol=lf
+config/*.conf text eol=lf

@@ -633,6 +633,21 @@ phase_files() {
         0664
 
     install_user_source \
+        scripts/protonvpn-healthcheck \
+        .local/bin/protonvpn-healthcheck \
+        0700
+
+    install_user_source \
+        config/protonvpn-healthcheck.service \
+        .config/systemd/user/protonvpn-healthcheck.service \
+        0644
+
+    install_user_source \
+        config/protonvpn-healthcheck.timer \
+        .config/systemd/user/protonvpn-healthcheck.timer \
+        0644
+
+    install_user_source \
         config/proton-router-web.service \
         .config/systemd/user/proton-router-web.service \
         0644
@@ -2322,6 +2337,10 @@ phase_services() {
     local autoconnect_target
     local web_target
 
+    local healthcheck_timer
+    local healthcheck_timer_link
+    local healthcheck_timer_target
+
     note "phase: services"
 
     collect_router_config
@@ -2334,14 +2353,17 @@ phase_services() {
     system_target="/etc/systemd/system/proton-keyring-init.service"
     autoconnect_target="$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service"
     web_target="$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+    healthcheck_timer_target="$ROUTER_HOME/.config/systemd/user/protonvpn-healthcheck.timer"
 
     system_link="/etc/systemd/system/graphical.target.wants/proton-keyring-init.service"
     autoconnect_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/protonvpn-autoconnect.service"
     web_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service"
+    healthcheck_timer_link="$ROUTER_HOME/.config/systemd/user/timers.target.wants/protonvpn-healthcheck.timer"
 
     system_unit="$(root_path "$system_target")"
     autoconnect_unit="$(root_path "$autoconnect_target")"
     web_unit="$(root_path "$web_target")"
+    healthcheck_timer="$(root_path "$healthcheck_timer_target")"
 
     [[ -f "$system_unit" ]] ||
         die "generated keyring service is missing: $system_unit"
@@ -2352,10 +2374,14 @@ phase_services() {
     [[ -f "$web_unit" ]] ||
         die "web user service is missing: $web_unit"
 
+    [[ -f "$healthcheck_timer" ]] ||
+        die "Proton healthcheck timer is missing: $healthcheck_timer"
+
     # Refuse non-symlink collisions before changing any enablement state.
     preflight_enablement_link "$system_link"
     preflight_enablement_link "$autoconnect_link"
     preflight_enablement_link "$web_link"
+    preflight_enablement_link "$healthcheck_timer_link"
 
     ensure_enablement_link \
         "$system_link" \
@@ -2372,6 +2398,12 @@ phase_services() {
     ensure_enablement_link \
         "$web_link" \
         "$web_target" \
+        "$router_uid" \
+        "$router_gid"
+
+    ensure_enablement_link \
+        "$healthcheck_timer_link" \
+        "$healthcheck_timer_target" \
         "$router_uid" \
         "$router_gid"
 
@@ -4018,6 +4050,21 @@ verify_final_artifact_tree() {
         0 0 644
 
     verify_static_source_install \
+        scripts/protonvpn-healthcheck \
+        "$ROUTER_HOME/.local/bin/protonvpn-healthcheck" \
+        "$router_uid" "$router_gid" 700
+
+    verify_static_source_install \
+        config/protonvpn-healthcheck.service \
+        "$ROUTER_HOME/.config/systemd/user/protonvpn-healthcheck.service" \
+        "$router_uid" "$router_gid" 644
+
+    verify_static_source_install \
+        config/protonvpn-healthcheck.timer \
+        "$ROUTER_HOME/.config/systemd/user/protonvpn-healthcheck.timer" \
+        "$router_uid" "$router_gid" 644
+
+    verify_static_source_install \
         config/nftables.conf \
         /etc/nftables.conf \
         0 0 755
@@ -4133,6 +4180,10 @@ verify_final_artifact_tree() {
     verify_exact_symlink \
         "$(root_path "$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service")" \
         "$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+
+    verify_exact_symlink \
+        "$(root_path "$ROUTER_HOME/.config/systemd/user/timers.target.wants/protonvpn-healthcheck.timer")" \
+        "$ROUTER_HOME/.config/systemd/user/protonvpn-healthcheck.timer"
 
     verify_generated_configuration_current
 
@@ -4326,6 +4377,33 @@ verify_final_runtime() {
             /usr/bin/systemctl \
             --user \
             is-enabled \
+            protonvpn-healthcheck.timer \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" == "enabled" ]] ||
+        die "protonvpn-healthcheck.timer is not enabled: $state"
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-active \
+            protonvpn-healthcheck.timer \
+            2>/dev/null ||
+        true
+    )"
+
+    [[ "$state" == "active" ]] ||
+        die "protonvpn-healthcheck.timer is not active: $state"
+
+
+    state="$(
+        run_router_user_bus \
+            /usr/bin/systemctl \
+            --user \
+            is-enabled \
             proton-router-web.service \
             2>/dev/null ||
         true
@@ -4407,6 +4485,15 @@ verify_final_runtime() {
         nmcli -g GENERAL.TYPE device show proton0
     )" == "wireguard" ]] ||
         die "proton0 is not WireGuard"
+
+    #
+    # A Connected CLI state and an active WireGuard interface do not prove that payload traffic can traverse the tunnel.
+    # Run the watchdog in --check-only mode so final verification fails rather than modifying tunnel state.
+    #
+    run_router_user_bus \
+        "$ROUTER_HOME/.local/bin/protonvpn-healthcheck" \
+        --check-only ||
+        die "Proton data-plane health check failed"
 
     proton_config="$(
         run_router_user_bus \

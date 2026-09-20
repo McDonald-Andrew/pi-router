@@ -1,0 +1,8 @@
+[Unit]
+Description=Proton VPN data-plane health check
+After=protonvpn-autoconnect.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/protonvpn-healthcheck
+TimeoutStartSec=90s

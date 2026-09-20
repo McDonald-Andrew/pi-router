@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically verify Proton VPN data-plane health
+
+[Timer]
+OnStartupSec=3min
+OnUnitActiveSec=2min
+AccuracySec=15s
+Unit=protonvpn-healthcheck.service
+
+[Install]
+WantedBy=timers.target

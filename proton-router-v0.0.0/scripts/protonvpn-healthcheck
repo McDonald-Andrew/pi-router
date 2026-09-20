@@ -1,0 +1,177 @@
+#!/bin/sh
+set -eu
+
+CONFIG_FILE="/etc/proton-router.conf"
+PROTON_IF="proton0"
+
+CHECK_ONLY=0
+
+case "${1:-}" in
+    "")
+        ;;
+    --check-only)
+        CHECK_ONLY=1
+        ;;
+    *)
+        echo "usage: $0 [--check-only]" >&2
+        exit 64
+        ;;
+esac
+
+[ -r "$CONFIG_FILE" ] || {
+    echo "protonvpn-healthcheck: missing $CONFIG_FILE" >&2
+    exit 1
+}
+
+# shellcheck disable=SC1090
+. "$CONFIG_FILE"
+
+[ -n "${WAN_IF:-}" ] || {
+    echo "protonvpn-healthcheck: WAN_IF is not configured" >&2
+    exit 1
+}
+
+PROTONVPN="$(command -v protonvpn || true)"
+CURL="$(command -v curl || true)"
+SYSTEMCTL="$(command -v systemctl || true)"
+TIMEOUT="$(command -v timeout || true)"
+
+[ -n "$PROTONVPN" ] || {
+    echo "protonvpn-healthcheck: protonvpn command is missing" >&2
+    exit 1
+}
+
+[ -n "$CURL" ] || {
+    echo "protonvpn-healthcheck: curl command is missing" >&2
+    exit 1
+}
+
+[ -n "$SYSTEMCTL" ] || {
+    echo "protonvpn-healthcheck: systemctl command is missing" >&2
+    exit 1
+}
+
+[ -n "$TIMEOUT" ] || {
+    echo "protonvpn-healthcheck: timeout command is missing" >&2
+    exit 1
+}
+
+log() {
+    printf 'protonvpn-healthcheck: %s\n' "$*"
+}
+
+wan_ready() {
+    [ -r "/sys/class/net/$WAN_IF/carrier" ] || return 1
+
+    [ "$(cat "/sys/class/net/$WAN_IF/carrier" 2>/dev/null || true)" = "1" ] ||
+        return 1
+
+    /usr/sbin/ip -4 route show default dev "$WAN_IF" 2>/dev/null |
+        grep -q '^default '
+}
+
+proton_connected() {
+    "$PROTONVPN" status 2>/dev/null |
+        grep -q '^Status: Connected'
+}
+
+probe_url() {
+    url="$1"
+
+    "$CURL" \
+        -4 \
+        --interface "$PROTON_IF" \
+        --connect-timeout 4 \
+        --max-time 8 \
+        --silent \
+        --show-error \
+        --output /dev/null \
+        "$url"
+}
+
+dataplane_once() {
+    [ -d "/sys/class/net/$PROTON_IF" ] || return 1
+
+    #
+    # Literal IPv4 addresses are intentional:
+    # this health check must not depend on DNS.
+    #
+    probe_url "http://1.1.1.1/cdn-cgi/trace" ||
+        probe_url "http://1.0.0.1/cdn-cgi/trace"
+}
+
+if ! wan_ready; then
+    log "WAN is unavailable; skipping Proton recovery"
+
+    if [ "$CHECK_ONLY" -eq 1 ]; then
+        exit 2
+    fi
+
+    exit 0
+fi
+
+if ! proton_connected; then
+    log "Proton is not connected"
+
+    if [ "$CHECK_ONLY" -eq 1 ]; then
+        exit 3
+    fi
+
+    #
+    # The normal managed helper owns connection establishment.
+    # Starting an already-running service is harmless.
+    #
+    "$SYSTEMCTL" \
+        --user \
+        --no-block \
+        start protonvpn-autoconnect.service ||
+        true
+
+    exit 0
+fi
+
+attempt=1
+max_attempts=3
+
+while [ "$attempt" -le "$max_attempts" ]; do
+    if dataplane_once; then
+        log "PASS - Proton data plane is healthy"
+        exit 0
+    fi
+
+    log "data-plane probe $attempt/$max_attempts failed"
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+        sleep 2
+    fi
+
+    attempt=$((attempt + 1))
+done
+
+log "FAIL - Proton reports Connected but data plane is unreachable"
+
+if [ "$CHECK_ONLY" -eq 1 ]; then
+    exit 4
+fi
+
+#
+# A stale Proton tunnel can report Connected indefinitely.
+# Disconnect it cleanly, then hand reconnection back to the
+# existing managed autoconnect helper.
+#
+log "disconnecting stale Proton session"
+
+if ! "$TIMEOUT" 30s "$PROTONVPN" disconnect; then
+    log "WARNING - protonvpn disconnect did not complete cleanly"
+fi
+
+sleep 2
+
+log "scheduling managed Proton reconnect"
+
+"$SYSTEMCTL" \
+    --user \
+    --no-block \
+    restart protonvpn-autoconnect.service
+
+exit 0

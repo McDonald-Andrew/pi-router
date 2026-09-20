@@ -1,5 +1,6 @@
 # Runtime packages beyond the Raspberry Pi OS Desktop baseline.
 # proton-vpn-cli requires the official Proton VPN Debian repository.
+curl
 dnsmasq
 nftables
 proton-vpn-cli
