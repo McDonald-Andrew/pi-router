@@ -249,6 +249,8 @@ The helper:
 
 Do not use bare `protonvpn connect` for normal router operation. The managed helper is the supported connection path because it coordinates Proton with the fail-closed host firewall.
 
+You can also run `systemctl --user --no-block restart protonvpn-autoconnect.service` like the health check
+
 ## Installation model
 
 `setup` is the canonical implementation of the router installation. The Windows installer and the manual Linux procedure drive the same Pi-side setup phases rather than maintaining separate installation logic.
