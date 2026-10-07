@@ -5,7 +5,14 @@
 One-window Windows orchestrator for the certified Raspberry Pi 5 Proton router setup.
 The Linux ./setup phases remain unchanged and available for manual installation.
 
-## Build locally
+## Debugging / Development and Building Locally
+
+To view UI run:
+
+    cd windows-installer
+    dotnet watch
+
+### Build locally
 
 Install the .NET 8 SDK, then run:
 
@@ -49,7 +56,3 @@ Place these files together:
 
 The installer never changes Windows interface metrics, static IP settings, or routes.
 Passwords are not written to the installer log.
-
-## Debugging
-
-To view UI run: dotnet watch
