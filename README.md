@@ -2,8 +2,8 @@
 
 ## Required Contents
 
--
--
+- Raspberry Pi 5
+- Waveshare PCIe to Gigabit Ethernet Board
 - micro SD card
 - 2x Ethernet cables
 
