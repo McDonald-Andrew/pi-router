@@ -9,17 +9,23 @@ The Linux ./setup phases remain unchanged and available for manual installation.
 
 To view UI run:
 
-    cd windows-installer
-    dotnet watch
+```powershell
+cd windows-installer
 
-### Build locally
+dotnet watch
+```
+
+### Build Locally
 
 Install the .NET 8 SDK, then run:
 
-    cd windows-installer
-    powershell -ExecutionPolicy Bypass -File .\build.ps1
+```powershell
+cd windows-installer
 
-The publish folder will contain:
+powershell -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+The publish folder will contain files including:
 
     proton-router-installer.exe
     proton-router-installer.sha256.txt
@@ -27,7 +33,7 @@ The publish folder will contain:
 
 GitHub Actions can build the same self-contained win-x64 single-file EXE automatically.
 
-## Release folder used by the installer
+## Release Folder Used by the Installer
 
 Place these files together:
 
@@ -35,7 +41,9 @@ Place these files together:
     proton-router-v*.*.*.tar.gz
     proton-router-v*.*.*.sha256.txt
 
-## What the GUI automates
+Then you may run the installer within that folder.
+
+## What the GUI Automates
 
 - verifies the local filename + SHA-256 + sidecar
 - connects to the fresh Pi using SSH.NET password authentication
