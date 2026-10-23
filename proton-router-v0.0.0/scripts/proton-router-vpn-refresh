@@ -635,6 +635,7 @@ PRIVADO_ADAPTER="$BASE/adapters/privado_adapter.py"
 TUNNELBEAR_ADAPTER="$BASE/adapters/tunnelbear_adapter.py"
 SURFSHARK_ADAPTER="$BASE/adapters/surfshark_adapter.py"
 PIA_ADAPTER="$BASE/adapters/pia_adapter.py"
+IPLOCATE_ADAPTER="$BASE/adapters/iplocate_adapter.py"
 TOR_ADAPTER="$BASE/adapters/tor_adapter.py"
 
 EXPECTED_ENGINE_SHA='dab599746e3ade155ccfb2df6a021888bdc45a11ca72ac82817deb0ec0f29697'
@@ -649,6 +650,7 @@ PRIVADO_URL='https://utils.privadovpn.com/share/udp_tcp.zip'
 TUNNELBEAR_URL='https://tunnelbear.s3.amazonaws.com/support/linux/openvpn.zip'
 SURFSHARK_URL='https://surfshark.com/api/v1/server/configurations'
 PIA_URL='https://serverlist.piaservers.net/vpninfo/servers/v6'
+IPLOCATE_URL='https://raw.githubusercontent.com/iplocate/free-proxy-list/main/all-proxies.txt'
 TOR_URL='https://onionoo.torproject.org/details?type=relay&running=true&fields=fingerprint,or_addresses,running'
 
 NFT_TABLE=router_filter
@@ -1176,8 +1178,52 @@ fi
 printf 'pia-mode=%s\n' "$PIA_MODE"
 
 echo
+report_progress 70 "Downloading IPLocate free proxy list"
+echo '=== IPLOCATE ADAPTER SOURCE ==='
+
+IPLOCATE_SOURCE="$RUN/iplocate-all-proxies.txt"
+IPLOCATE_TSV="$RUN/iplocate.tsv"
+IPLOCATE_NEW=0
+IPLOCATE_MODE=none
+
+if download_url \
+    iplocate \
+    "$IPLOCATE_URL" \
+    "$IPLOCATE_SOURCE"
+then
+    if python3 "$IPLOCATE_ADAPTER" \
+        --source "$IPLOCATE_SOURCE" \
+        --output "$IPLOCATE_TSV" \
+        && validate_provider_tsv \
+            iplocate \
+            "$IPLOCATE_TSV" \
+            100
+    then
+        IPLOCATE_NEW=1
+        IPLOCATE_MODE=current-free-proxy-list
+    else
+        rm -f "$IPLOCATE_TSV"
+    fi
+fi
+
+if [ ! -s "$IPLOCATE_TSV" ]
+then
+    if use_lkg_or_fail \
+        iplocate \
+        "$IPLOCATE_TSV" \
+        100
+    then
+        IPLOCATE_MODE=last-known-good
+    else
+        exit 1
+    fi
+fi
+
+printf 'iplocate-mode=%s\n' "$IPLOCATE_MODE"
+
 echo
-report_progress 70 "Downloading Tor running-relay catalog"
+echo
+report_progress 76 "Downloading Tor running-relay catalog"
 echo '=== TOR ADAPTER SOURCE ==='
 
 TOR_SOURCE="$RUN/tor-onionoo.json"
@@ -1247,7 +1293,7 @@ fi
 printf 'tor-mode=%s\n' "$TOR_MODE"
 
 
-report_progress 82 "Normalizing 9-source endpoint set"
+report_progress 84 "Normalizing 10-source endpoint set"
 
 NORMALIZED="$RUN/normalized"
 
@@ -1260,6 +1306,7 @@ python3 "$ENGINE" \
     --input "$TUNNELBEAR_TSV" \
     --input "$SURFSHARK_TSV" \
     --input "$PIA_TSV" \
+    --input "$IPLOCATE_TSV" \
     --input "$TOR_TSV" \
     --out-dir "$NORMALIZED"
 
@@ -1506,6 +1553,14 @@ then
         "$LKG/pia.tsv"
 fi
 
+if [ "$IPLOCATE_NEW" -eq 1 ]
+then
+    install \
+        -m 0600 \
+        "$IPLOCATE_TSV" \
+        "$LKG/iplocate.tsv"
+fi
+
 if [ "$TOR_NEW" -eq 1 ]
 then
     install \
@@ -1551,6 +1606,7 @@ privado_mode=$PRIVADO_MODE
 tunnelbear_mode=$TUNNELBEAR_MODE
 surfshark_mode=$SURFSHARK_MODE
 pia_mode=$PIA_MODE
+iplocate_mode=$IPLOCATE_MODE
 tor_mode=$TOR_MODE
 ipv4_count=$IP_COUNT
 cidr_count=$CIDR_COUNT

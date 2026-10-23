@@ -1,6 +1,6 @@
 # Raspberry Pi 5 Proton Router
 
-A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with per-device raw-WAN bypass, enforced DNS policy, dynamic VPN/Tor endpoint blocking, and a local web management interface.
+A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with per-device raw-WAN bypass, enforced DNS policy, dynamic VPN/proxy/Tor endpoint blocking, and a local web management interface.
 
 ## Features
 
@@ -14,7 +14,7 @@ A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with pe
 - Automatic endpoint refresh every six hours
 - Local web UI for router/VPN status, endpoint-block status, and client bypass control
 - Manual endpoint block list refresh from local web UI
-- Dynamic blocking of known commercial VPN and Tor relay endpoints
+- Dynamic blocking of known commercial VPN, open-proxy, and Tor relay endpoints
 - Static DNS blocking for selected proxy/remote-browser domains
 - Windows installer and manual Linux install steps available
 
@@ -127,9 +127,9 @@ cache-size=0
 
 Do not remove this setting without reviewing the DNS enforcement model.
 
-## Dynamic VPN and Tor endpoint blocking
+## Dynamic VPN, proxy, and Tor endpoint blocking
 
-The router maintains an nftables set of known VPN/Tor IPv4 endpoints used to prevent LAN clients from directly reaching alternate VPN infrastructure and bypassing router policy.
+The router maintains an nftables set of known VPN, open-proxy, and Tor IPv4 endpoints used to prevent LAN clients from directly reaching alternate routing infrastructure and bypassing router policy.
 
 The refresh pipeline currently consumes provider data for:
 
@@ -141,9 +141,12 @@ The refresh pipeline currently consumes provider data for:
 - TunnelBear
 - Surfshark
 - Private Internet Access (PIA)
+- [IPLocate Free Proxy List](https://github.com/iplocate/free-proxy-list)
 - Tor running relays via Onionoo
 
 Provider-specific adapters normalize the different upstream formats into one endpoint database. The combined database is validated before it is published and loaded into nftables.
+
+IPLocate publishes open-proxy endpoints as `IPv4:port`. Its adapter validates both fields, preserves the source port as provenance, and submits the bare IPv4 address to the existing whole-address blocking pipeline.
 
 If a current provider feed or adapter fails, the refresh can use that provider's validated last-known-good data. If a required provider has neither usable current data nor a last-known-good copy, the refresh fails instead of publishing a partial database. An existing successfully published database remains available.
 
