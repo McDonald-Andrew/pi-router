@@ -36,28 +36,6 @@ Once instalation is complete you may follow the final steps for setup:
 
 Congratulations! Your Proton Router is finished!
 
-# Unpack `proton-router-vX.X.X.tar.gz`
-
-```powershell
-$tarFile="proton-router-v0.0.0.tar.gz"
-$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router-work"
-$in = "$parent\$tarFile"
-
-New-Item -ItemType Directory -Force $parent | Out-Null
-
-tar -xzf $in -C $parent
-```
-
-Do not run git init yet if changes should not be recorded yet in Git history.
-When happy with structure, initialize Git:
-
-```sh
-git init
-git status
-```
-
-As long as no remote is added, there is nowhere for Git to push.
-
 # Pack / Repack `proton-router-vX.X.X.tar.gz`
 
 Create a new archive excluding .git:
@@ -98,3 +76,25 @@ if ($expected -eq $actual) {
     "ARCHIVE VERIFY: FAIL"
 }
 ```
+
+# Unpack `proton-router-vX.X.X.tar.gz`
+
+```powershell
+$tarFile="proton-router-v0.0.0.tar.gz"
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router-work"
+$in = "$parent\$tarFile"
+
+New-Item -ItemType Directory -Force $parent | Out-Null
+
+tar -xzf $in -C $parent
+```
+
+Do not run git init yet if changes should not be recorded yet in Git history.
+When happy with structure, initialize Git:
+
+```sh
+git init
+git status
+```
+
+As long as no remote is added, there is nowhere for Git to push.
