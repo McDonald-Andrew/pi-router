@@ -62,6 +62,7 @@ internal sealed class InstallerForm : Form
     public InstallerForm()
     {
         Text = "Proton Router Installer";
+        Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Width = 400;
         Height = 680;
         MinimumSize = new Size(760, 620);
