@@ -46,6 +46,7 @@ Congratulations! Your Proton Router is finished!
 Create a new archive excluding .git:
 
 ```powershell
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router-work"
 $release = "proton-router-v0.0.0"
 $out = "$parent\$release.tar.gz"
 
