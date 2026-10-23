@@ -14,7 +14,7 @@ Ensure an Ethernet cable is connected from one of your router's LAN ports to the
 # Installing Proton-Router
 
 - If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
-- A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed to run the Windows installer.
+- A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
 - To build a `*.tar.gz` and `*.sha256.txt` files, see [Packing / Repack `proton-router-vX.X.X.tar.gz`](#pack--repack-proton-router-vX.X.X.tar.gz) below.
 
 - To build a Windows installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md).
