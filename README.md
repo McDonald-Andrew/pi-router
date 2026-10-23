@@ -13,9 +13,14 @@ Ensure an Ethernet cable is connected from one of your router's LAN ports to the
 
 # Installing Proton-Router
 
-If on a Windows machine, it is recommended to use the Windows installer packaged in with the latest release. If you wish to build your own tar, see [Packing / Unpacking `proton-router`](#packing--unpacking-proton-router) below. If you wish to build your own installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md). The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, you may retry the installation. Otherwise it is reccomended to **re-image the Pi 5 with a fresh OS Desktop image** and start again.
+- If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
+- A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed to run the Windows installer.
+- To build a `*.tar.gz` and `*.sha256.txt` files, see [Packing / Repack `proton-router-vX.X.X.tar.gz`](#pack--repack-proton-router-vX.X.X.tar.gz) below.
 
-Otherwise, or if on a Linux machine, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`. Like the Windows setup, a built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
+- To build a Windows installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md).
+  - The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, retry the installation. If this still does not work, **re-image the Pi 5 with a fresh Raspberry Pi OS Desktop image** and start again.
+- Otherwise, or if using Linux, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`.
+  - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
 # Final Setup
 
