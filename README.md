@@ -1,6 +1,4 @@
-# Getting Started
-
-## Required Contents
+# Required Contents
 
 - Raspberry Pi 5
 - Waveshare PCIe to Gigabit Ethernet Board
@@ -13,13 +11,13 @@ DO NOT POWER ON THE PI 5 YET.
 
 Ensure an Ethernet cable is connected from one of your router's LAN ports to the Waveshare PCIe eth0 port. The other ethernet cable should be plugged in from your machine to the Pi 5's built-in ethernet eth0 port.
 
-## Installing Proton-Router
+# Installing Proton-Router
 
 If on a Windows machine, it is recommended to use the Windows installer packaged in with the latest release. If you wish to build your own tar, see [Packing / Unpacking `proton-router`](#packing--unpacking-proton-router) below. If you wish to build your own installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md). The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, you may retry the installation. Otherwise it is reccomended to **re-image the Pi 5 with a fresh OS Desktop image** and start again.
 
 Otherwise, or if on a Linux machine, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`. Like the Windows setup, a built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
-## Final Setup
+# Final Setup
 
 Once instalation is complete you may follow the final steps for setup:
 
@@ -38,9 +36,7 @@ Once instalation is complete you may follow the final steps for setup:
 
 Congratulations! Your Proton Router is finished!
 
-# Packing / Unpacking `proton-router`
-
-## Unpacking the `.tar.gz`
+# Unpack `proton-router-vX.X.X.tar.gz`
 
 ```powershell
 $tarFile="proton-router-v0.0.0.tar.gz"
@@ -62,7 +58,7 @@ git status
 
 As long as no remote is added, there is nowhere for Git to push.
 
-## Repack
+# Pack / Repack `proton-router-vX.X.X.tar.gz`
 
 Create a new archive excluding .git:
 
