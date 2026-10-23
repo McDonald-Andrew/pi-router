@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Extract IPv4 addresses from IPLocate's free proxy endpoint list.
 
-The source contains one verified proxy endpoint per line in IPv4:port form.
-Ports are validated and retained in provenance, while the adapter emits bare
-IPv4 addresses for the router's existing whole-address blocking pipeline.
+The source contains one verified proxy endpoint per line in
+protocol://IPv4:port form. Protocols and ports are validated and retained in
+provenance, while the adapter emits bare IPv4 addresses for the router's
+existing whole-address blocking pipeline.
 """
 
 from __future__ import annotations
@@ -15,6 +16,12 @@ import sys
 
 
 PROVIDER = "iplocate"
+ALLOWED_PROTOCOLS = {
+    "http",
+    "https",
+    "socks4",
+    "socks5",
+}
 
 
 def main() -> int:
@@ -50,7 +57,19 @@ def main() -> int:
                 continue
 
             source_lines += 1
-            host, separator, port_text = endpoint.rpartition(":")
+            protocol = "unspecified"
+            address_port = endpoint
+
+            if "://" in endpoint:
+                protocol, separator, address_port = endpoint.partition("://")
+                protocol = protocol.lower()
+
+                if not separator or protocol not in ALLOWED_PROTOCOLS:
+                    raise RuntimeError(
+                        f"line {line_number}: unsupported protocol {protocol!r}"
+                    )
+
+            host, separator, port_text = address_port.rpartition(":")
 
             if not separator or not host or not port_text:
                 raise RuntimeError(
@@ -95,7 +114,7 @@ def main() -> int:
             endpoints.add(key)
             provenance = (
                 "free-proxy-list:all-proxies.txt"
-                f"|line={line_number}|port={port}"
+                f"|line={line_number}|protocol={protocol}|port={port}"
             )
             rows.append((PROVIDER, str(address), provenance))
 

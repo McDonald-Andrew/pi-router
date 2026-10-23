@@ -146,7 +146,7 @@ The refresh pipeline currently consumes provider data for:
 
 Provider-specific adapters normalize the different upstream formats into one endpoint database. The combined database is validated before it is published and loaded into nftables.
 
-IPLocate publishes open-proxy endpoints as `IPv4:port`. Its adapter validates both fields, preserves the source port as provenance, and submits the bare IPv4 address to the existing whole-address blocking pipeline.
+IPLocate publishes open-proxy endpoints as `protocol://IPv4:port`. Its adapter validates all three fields, preserves the protocol and port as provenance, and submits the bare IPv4 address to the existing whole-address blocking pipeline.
 
 If a current provider feed or adapter fails, the refresh can use that provider's validated last-known-good data. If a required provider has neither usable current data nor a last-known-good copy, the refresh fails instead of publishing a partial database. An existing successfully published database remains available.
 
