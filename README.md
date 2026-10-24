@@ -9,22 +9,22 @@ After putting the Pi5 router together, install the latest Raspberry Pi OS Deskto
 
 DO NOT POWER ON THE PI 5 YET.
 
-Ensure an Ethernet cable is connected from one of your router's LAN ports to the Waveshare PCIe eth0 port. The other ethernet cable should be plugged in from your machine to the Pi 5's built-in ethernet eth0 port.
+Ensure an Ethernet cable is connected from one of your router's LAN ports to the Waveshare PCIe device's ethernet port (`eth1`). The other ethernet cable should connect your machine to the Pi 5's built-in wthernet port (`eth0`).
 
-# Installing Proton-Router
+# Installing `proton-router`
 
 - If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
 - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
-- To build a `*.tar.gz` and `*.sha256.txt` files, see [Packing / Repack `proton-router-vX.X.X.tar.gz`](#pack--repack-proton-router-vX.X.X.tar.gz) below.
+- To build a `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `proton-router-vX.X.X.tar.gz](#pack--repack-proton-router-vX.X.X.tar.gz) below.
 
-- To build a Windows installer, you may follow the instructions in [BUILD.md](windows-installer\BUILD.md).
+- To build a Windows installer, follow [windows-installer/BUILD.md](windows-installer/BUILD.md).
   - The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, retry the installation. If this still does not work, **re-image the Pi 5 with a fresh Raspberry Pi OS Desktop image** and start again.
-- Otherwise, or if using Linux, you may run the setup script steps manually and follow the `proton-router-v*.*.*/docs/setup.md`.
+- Otherwise, or if using Linux, you may run the setup script steps manually and follow `src/docs/setup.md`.
   - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
 # Final Setup
 
-Once instalation is complete you may follow the final steps for setup:
+Once installation is complete you may follow the final steps for setup:
 
 1. disconnect the ethernet cables and place the Pi in this orientation
 2. Switch your internet router to Access Point/AP mode.
@@ -43,19 +43,16 @@ Congratulations! Your Proton Router is finished!
 
 # Pack / Repack `proton-router-vX.X.X.tar.gz`
 
-Create a new archive excluding .git:
+Create a new archive:
 
 ```powershell
-$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router-work"
-$release = "proton-router-v0.0.0"
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
+$release = "proton-router-v0.0.0" # Replace with the release version, for example 0.1.0
 $out = "$parent\$release.tar.gz"
 
 Remove-Item $out -Force -ErrorAction SilentlyContinue
 
-$folderName = $release
-
-tar --exclude="$folderName/.git" -czf $out $folderName
-# or if you don't have a .git folder
+$folderName = "src"
 tar -czf $out $folderName
 ```
 
@@ -86,21 +83,11 @@ if ($expected -eq $actual) {
 # Unpack `proton-router-vX.X.X.tar.gz`
 
 ```powershell
-$tarFile="proton-router-v0.0.0.tar.gz"
-$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router-work"
+$tarFile="proton-router-v0.0.0.tar.gz" # Replace with the release version, for example 0.1.0
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
 $in = "$parent\$tarFile"
 
 New-Item -ItemType Directory -Force $parent | Out-Null
 
 tar -xzf $in -C $parent
 ```
-
-Do not run git init yet if changes should not be recorded yet in Git history.
-When happy with structure, initialize Git:
-
-```sh
-git init
-git status
-```
-
-As long as no remote is added, there is nowhere for Git to push.
