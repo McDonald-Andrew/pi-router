@@ -47,7 +47,7 @@ Create a new archive:
 
 ```powershell
 $parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
-$release = "proton-router-v0.0.0" # Replace with the release version, for example 0.1.0
+$release = "proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 $out = "$parent\$release.tar.gz"
 
 Remove-Item $out -Force -ErrorAction SilentlyContinue
@@ -83,7 +83,7 @@ if ($expected -eq $actual) {
 # Unpack `proton-router-vX.X.X.tar.gz`
 
 ```powershell
-$tarFile="proton-router-v0.0.0.tar.gz" # Replace with the release version, for example 0.1.0
+$tarFile="proton-router-vX.Y.Z"  # Replace with the release version, for example 0.1.0
 $parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
 $in = "$parent\$tarFile"
 

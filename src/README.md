@@ -475,7 +475,7 @@ sudo systemctl status proton-router-vpn-refresh.timer --no-pager
 The canonical end-to-end verification is:
 
 ```bash
-cd ~/proton-router-v0.0.0  # Replace X.Y.Z with the installed release version
+cd ~/proton-router-vX.Y.Z # Replace with the release version, for example 0.1.0
 
 ./setup \
     --live \

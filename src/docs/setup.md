@@ -71,8 +71,8 @@ For parity with the automated installer, use the release archive rather than man
 Place these two files in the router user's home directory:
 
 ```text
-~/proton-router-v0.0.0.tar.gz # Replace with the release version, for example 0.1.0
-~/proton-router-v0.0.0.sha256.txt # Replace with the release version, for example 0.1.0
+~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Verify that the archive hash matches the hash recorded in the sidecar:
@@ -80,7 +80,7 @@ Verify that the archive hash matches the hash recorded in the sidecar:
 ```bash
 cd ~
 
-release="proton-router-v0.0.0" # Replace with the release version, for example 0.1.0
+release="proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 archive_sha="$(sha256sum "$release.tar.gz" | awk '{print $1}')"
 sidecar_sha="$(grep -Eio '[0-9a-f]{64}' "$release.sha256.txt" | head -n 1 | tr '[:lower:]' '[:upper:]')"
 archive_sha_upper="$(printf '%s' "$archive_sha" | tr '[:lower:]' '[:upper:]')"
@@ -98,7 +98,7 @@ Extract a clean copy:
 
 ```bash
 cd ~
-release="proton-router-v0.0.0" # Replace with the release version, for example 0.1.0
+release="proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 rm -rf "$HOME/$release"
 
 tar -xzf "$HOME/$release.tar.gz"
@@ -108,7 +108,7 @@ chmod +x "$HOME/$release/setup"
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z # Replace with the release version, for example 0.1.0
 ```
 
 Verify the setup entry point:
@@ -185,7 +185,7 @@ ssh <ROUTER_USER>@<PI_WIFI_HOST>
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run the same pre-reboot phase used by the automated installer:
@@ -282,7 +282,7 @@ Do not continue until LAN SSH works.
 After reconnecting to the Pi at `192.168.50.1`, enter the release directory:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Remove any checkpoint left by an earlier incomplete installation attempt:
@@ -378,7 +378,7 @@ Do not manually connect Proton at this point.
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-v0.0.0" # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run the same post-reboot phase used by the automated installer:
@@ -440,7 +440,7 @@ ssh <ROUTER_USER>@192.168.50.1
 Enter the release directory again:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Re-run the same post-reboot phase:
@@ -568,7 +568,7 @@ protonvpn status 2>/dev/null |
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run exactly the same final verification phase used by the automated installer:
@@ -638,7 +638,7 @@ Do not replace the phase-based installation procedure with individually copied p
 The canonical installation success gate is:
 
 ```bash
-cd ~/proton-router-v0.0.0 # Replace with the release version, for example 0.1.0
+cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 
 ./setup \
     --live \
