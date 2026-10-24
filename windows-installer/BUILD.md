@@ -3,7 +3,7 @@
 ## Purpose
 
 One-window Windows orchestrator for the certified Raspberry Pi 5 Proton router setup.
-The Linux ./setup phases remain unchanged and available for manual installation.
+The Linux `src/setup` phases remain unchanged and available for manual installation.
 
 ## Debugging / Development and Building Locally
 
@@ -41,7 +41,7 @@ Place these files together:
     proton-router-v*.*.*.tar.gz
     proton-router-v*.*.*.sha256.txt
 
-Then you may run the installer within that folder.
+Then run the installer within that folder.
 
 ## What the GUI Automates
 
