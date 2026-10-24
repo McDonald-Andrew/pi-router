@@ -375,10 +375,10 @@ The included `NetworkManager-wait-online` override allows local router startup t
 
 WAN DHCP retries continue independently.
 
-## Repository layout
+## Src folder layout
 
 ```text
-.
+src/
 ├── README.md
 ├── setup
 ├── requirements-apt.txt
@@ -396,7 +396,9 @@ WAN DHCP retries continue independently.
 │   ├── proton-router-vpn-refresh.timer
 │   ├── proton-router-web.service
 │   ├── proton-router.conf.example
-│   └── protonvpn-autoconnect.service
+│   ├── protonvpn-autoconnect.service
+│   ├── protonvpn-healthcheck.service
+│   └── protonvpn-healthcheck.timer
 ├── docs/
 │   └── setup.md
 ├── lib/
@@ -405,6 +407,7 @@ WAN DHCP retries continue independently.
 │           ├── normalize.py
 │           └── adapters/
 │               ├── hideme_adapter.py
+│               ├── iplocate_adapter.py
 │               ├── nord_adapter.py
 │               ├── pia_adapter.py
 │               ├── privado_adapter.py
@@ -418,7 +421,8 @@ WAN DHCP retries continue independently.
 │   ├── proton-keyring-init
 │   ├── proton-router-apply-conf
 │   ├── proton-router-vpn-refresh
-│   └── protonvpn-autoconnect
+│   ├── protonvpn-autoconnect
+│   └── protonvpn-healthcheck
 └── web/
     ├── app.js
     ├── favicon.ico
@@ -471,7 +475,7 @@ sudo systemctl status proton-router-vpn-refresh.timer --no-pager
 The canonical end-to-end verification is:
 
 ```bash
-cd ~/proton-router-v0.0.0
+cd ~/proton-router-v0.0.0  # Replace X.Y.Z with the installed release version
 
 ./setup \
     --live \
