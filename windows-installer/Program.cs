@@ -29,12 +29,10 @@ internal sealed record ProcessResult(int ExitCode, string Output);
 
 internal sealed class InstallerForm : Form
 {
-    private const string CertifiedArchiveName = "proton-router-v0.0.0.tar.gz";
-    private const string CertifiedSidecarName = "proton-router-v0.0.0.sha256.txt";
+    private const string ArchiveNamePattern = @"^proton-router-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\.tar\.gz$";
     private const string CertifiedArchiveSha256 = "A00B8301CBEC80FD24E79FF23298E25B55DED0A8F725A8FDB4D28B622064B7FB";
     private const string LanHost = "192.168.50.1";
     private const string LanPrefix = "192.168.50.";
-    private const string RemoteExportDir = "~/proton-router-v0.0.0";
 
     private readonly TextBox txtArchive = new();
     private readonly TextBox txtInitialHost = new();
@@ -202,7 +200,7 @@ internal sealed class InstallerForm : Form
     private void LoadDefaults()
     {
         string exeDir = AppContext.BaseDirectory;
-        txtArchive.Text = Path.Combine(exeDir, CertifiedArchiveName);
+        txtArchive.Text = Directory.GetFiles(exeDir, "*.tar.gz").First();
         txtInitialHost.Text = "rpi5-0";
         txtPiUser.Text = "admin";
         txtAdapter.Text = "Ethernet";
@@ -213,7 +211,7 @@ internal sealed class InstallerForm : Form
         using var dialog = new OpenFileDialog
         {
             Filter = "Certified router release (*.tar.gz)|*.tar.gz|All files (*.*)|*.*",
-            FileName = CertifiedArchiveName
+            FileName = Path.GetFileName(txtArchive.Text)
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
             txtArchive.Text = dialog.FileName;
@@ -308,20 +306,23 @@ internal sealed class InstallerForm : Form
     {
         string archive = Path.GetFullPath(txtArchive.Text);
         string archiveName = Path.GetFileName(archive);
+        string releaseName = archiveName[..^".tar.gz".Length];
+        string sidecarName = releaseName + ".sha256.txt";
+        string remoteExportDir = "~/" + releaseName;
         string initialHost = txtInitialHost.Text.Trim();
         string adapter = txtAdapter.Text.Trim();
 
         SetProgress(4, "Verifying certified release");
-        if (!string.Equals(archiveName, CertifiedArchiveName, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("This installer accepts only " + CertifiedArchiveName + ".");
+        if (!Regex.Match(archiveName, ArchiveNamePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Success)
+            throw new InvalidOperationException("This installer accepts only archives that match proton-router-vX.Y.Z.tar.gz.");
 
         string localSha = await Task.Run(() => ComputeSha256(archive), token);
         if (!string.Equals(localSha, CertifiedArchiveSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Archive SHA-256 does not match the certified clean-room build.");
 
-        string? sidecarPath = FindSidecar(archive);
+        string? sidecarPath = FindSidecar(archive, sidecarName);
         if (sidecarPath is null)
-            throw new InvalidOperationException("Missing " + CertifiedSidecarName + " beside the archive.");
+            throw new InvalidOperationException("Missing " + sidecarName + " beside the archive.");
         string? sidecarSha = ReadSidecarHash(sidecarPath);
         if (!string.Equals(sidecarSha, CertifiedArchiveSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(".sha256.txt does not contain the certified SHA-256.");
@@ -351,9 +352,9 @@ internal sealed class InstallerForm : Form
 
         SetProgress(22, "Extracting archive on Pi");
         RemoteResult extract = await RunRemoteAsync(initialHost,
-            "cd ~ && rm -rf ~/proton-router-v0.0.0 && tar -xzf ~/" + ShQuote(archiveName) +
-            " && chmod +x ~/proton-router-v0.0.0/setup" +
-            " && cd ~/proton-router-v0.0.0 && ./setup --help >/dev/null",
+            "cd ~ && rm -rf " + remoteExportDir + " && tar -xzf ~/" + ShQuote(archiveName) +
+            " && chmod +x " + remoteExportDir + "/setup" +
+            " && cd " + remoteExportDir + " && ./setup --help >/dev/null",
             PromptMode.None, TimeSpan.FromMinutes(3), token);
         RequireRemoteSuccess(extract, "Failed to extract or validate archive on the Pi.");
 
@@ -368,13 +369,13 @@ internal sealed class InstallerForm : Form
                 "Both Ethernet links must be up: Dell -> built-in Pi RJ45, old-router LAN -> Waveshare RJ45.");
         AppendLog("ethernet-carrier=PASS\r\n");
 
-        string preCommand = "cd " + RemoteExportDir +
+        string preCommand = "cd " + remoteExportDir +
                             " && ./setup --live --allow-live-install --phase pre-reboot" +
                             " --allow-network-cutover --allow-wifi-disable --non-interactive";
 
         string preResumeCommand =
             "sudo rm -f /var/lib/proton-router-setup/reboot-required.boot-id" +
-            " && cd " + RemoteExportDir +
+            " && cd " + remoteExportDir +
             " && ./setup --live --allow-live-install --phase pre-reboot-resume" +
             " --allow-network-cutover --allow-wifi-disable --non-interactive";
 
@@ -465,7 +466,7 @@ internal sealed class InstallerForm : Form
         await RecoverAfterPiRebootAsync(adapter, token);
 
         SetProgress(68, "Signing in to Proton and enabling unattended services");
-        string postCommand = "cd " + RemoteExportDir +
+        string postCommand = "cd " + remoteExportDir +
                              " && ./setup --live --allow-live-install --phase post-reboot";
         RemoteResult post;
 
@@ -504,7 +505,7 @@ internal sealed class InstallerForm : Form
         await WaitForUnattendedProtonAsync(token);
 
         SetProgress(93, "Running final verification");
-        string verifyCommand = "cd " + RemoteExportDir +
+        string verifyCommand = "cd " + remoteExportDir +
                                " && ./setup --live --allow-live-install --phase final-verify --non-interactive";
         RemoteResult verify = await RunRemoteAsync(LanHost, verifyCommand,
             PromptMode.SudoOnly, TimeSpan.FromMinutes(10), token, true);
@@ -1026,14 +1027,11 @@ internal sealed class InstallerForm : Form
         return Convert.ToHexString(sha.ComputeHash(stream)).ToLowerInvariant();
     }
 
-    private static string? FindSidecar(string archive)
+    private static string? FindSidecar(string archive, string sidecarName)
     {
         string dir = Path.GetDirectoryName(archive) ?? AppContext.BaseDirectory;
-        string preferred = Path.Combine(dir, CertifiedSidecarName);
+        string preferred = Path.Combine(dir, sidecarName);
         if (File.Exists(preferred)) return preferred;
-
-        string alternate = archive + ".sha256.txt";
-        if (File.Exists(alternate)) return alternate;
 
         return null;
     }
