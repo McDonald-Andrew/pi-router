@@ -1,7 +1,7 @@
 * text=auto
 
-setup text eol=lf
-scripts/* text eol=lf
-config/*.service text eol=lf
-config/*.timer text eol=lf
-config/*.conf text eol=lf
+src/setup text eol=lf
+src/scripts/* text eol=lf
+src/config/*.service text eol=lf
+src/config/*.timer text eol=lf
+src/config/*.conf text eol=lf
