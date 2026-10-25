@@ -48,12 +48,14 @@ Create a new archive:
 ```powershell
 $parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
 $release = "proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
+$releaseDir = "$parent\$release"
 $out = "$parent\$release.tar.gz"
 
-Remove-Item $out -Force -ErrorAction SilentlyContinue
+Remove-Item $out, $releaseDir -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item "$parent\src" $releaseDir -Recurse
 
-$folderName = "src"
-tar -czf $out $folderName
+tar -czf $out -C $parent $release
+Remove-Item $releaseDir -Recurse -Force
 ```
 
 Generate new SHA256 text file for verification:
@@ -83,7 +85,7 @@ if ($expected -eq $actual) {
 # Unpack `proton-router-vX.X.X.tar.gz`
 
 ```powershell
-$tarFile="proton-router-vX.Y.Z"  # Replace with the release version, for example 0.1.0
+$tarFile="proton-router-vX.Y.Z.tar.gz"  # Replace with the release version, for example 0.1.0
 $parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
 $in = "$parent\$tarFile"
 
