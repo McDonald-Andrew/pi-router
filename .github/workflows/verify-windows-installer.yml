@@ -7,7 +7,7 @@ on:
       - main
     paths:
       - "windows-installer/**"
-      - ".github/workflows/check-windows-installer.yml"
+      - ".github/workflows/verify-windows-installer.yml"
 
 permissions:
   contents: read
