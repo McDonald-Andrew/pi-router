@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -30,7 +31,7 @@ internal sealed record ProcessResult(int ExitCode, string Output);
 internal sealed class InstallerForm : Form
 {
     private const string ArchiveNamePattern = @"^proton-router-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\.tar\.gz$";
-    private const string CertifiedArchiveSha256 = "A00B8301CBEC80FD24E79FF23298E25B55DED0A8F725A8FDB4D28B622064B7FB";
+    private static readonly string CertifiedArchiveSha256 = typeof(Program).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().First(attribute => attribute.Key == "CertifiedArchiveSha256").Value!;
     private const string LanHost = "192.168.50.1";
     private const string LanPrefix = "192.168.50.";
 

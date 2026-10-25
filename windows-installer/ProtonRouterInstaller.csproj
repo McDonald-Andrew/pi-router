@@ -23,6 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyMetadata Include="CertifiedArchiveSha256" Value="$(CertifiedArchiveSha256)" />
     <PackageReference Include="SSH.NET" Version="2026.0.0" />
   </ItemGroup>
 </Project>

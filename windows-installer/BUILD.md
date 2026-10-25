@@ -20,9 +20,7 @@ dotnet watch
 Install the .NET 8 SDK, then run:
 
 ```powershell
-cd windows-installer
-
-powershell -ExecutionPolicy Bypass -File .\build.ps1
+powershell -ExecutionPolicy Bypass -File .\windows-installer\build.ps1
 ```
 
 The publish folder will contain files including:
@@ -31,7 +29,7 @@ The publish folder will contain files including:
     proton-router-installer.sha256.txt
     THIRD-PARTY-NOTICES.txt
 
-GitHub Actions can build the same self-contained win-x64 single-file EXE automatically.
+GitHub Actions `Release Proton Router` workflow packages `src/`, creates the archive, builds the matching win-x64 installer, and uploads all release files.
 
 ## Release Folder Used by the Installer
 
