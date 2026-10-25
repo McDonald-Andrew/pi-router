@@ -71,8 +71,8 @@ For parity with the automated installer, use the release archive rather than man
 Place these two files in the router user's home directory:
 
 ```text
-~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
-~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+~/proton-router-vX.Y.Z.tar.gz      # Replace with the release version, for example 0.1.0
+~/proton-router-vX.Y.Z.sha256.txt  # Replace with the release version, for example 0.1.0
 ```
 
 Verify that the archive hash matches the hash recorded in the sidecar:
