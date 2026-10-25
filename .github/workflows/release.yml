@@ -1,0 +1,73 @@
+name: Proton Router Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version number without the leading `v`, for example 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Pack `src` Folder and Build Certified Windows Installer
+        shell: powershell
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:VERSION -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+              throw 'Version must match X.Y.Z or X.Y.Z-prerelease, where X.Y.Z is replaced with the release version, for example 0.1.0.'
+          }
+
+          $releaseName = "proton-router-v$env:VERSION"
+          $tmpDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
+          $stagingDir = Join-Path $tmpDir $releaseName
+          $archiveDir = Join-Path $tmpDir "$releaseName.tar.gz"
+          $shaDir = Join-Path $tmpDir "$releaseName.sha256.txt"
+
+          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+          Copy-Item -LiteralPath .\src -Destination $stagingDir -Recurse
+
+          tar -czf $archiveDir -C $tmpDir $releaseName
+          if ($LASTEXITCODE -ne 0) {
+              throw "tar exited with code $LASTEXITCODE"
+          }
+
+          $newSha = (Get-FileHash -LiteralPath $archiveDir -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath $shaDir -Value $newSha -Encoding ascii
+
+          Set-Location $tmpDir
+          ..\windows-installer\build.ps1
+
+      - name: Create GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          $releaseName = "proton-router-v$env:VERSION"
+
+          gh release create "v$env:VERSION" `
+            ".\dist\$releaseName.tar.gz" `
+            ".\dist\$releaseName.sha256.txt" `
+            .\windows-installer\publish\proton-router-installer.exe `
+            .\windows-installer\publish\proton-router-installer.sha256.txt `
+            .\windows-installer\publish\THIRD-PARTY-NOTICES.txt `
+            --target "${{ github.sha }}" `
+            --generate-notes
