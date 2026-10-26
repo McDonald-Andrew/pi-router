@@ -18,7 +18,7 @@
 - Raspberry Pi 5
 - Waveshare PCIe to Gigabit Ethernet Board
 - micro SD card
-- 2x Ethernet cables
+- 2x ethernet cables
 
 After putting the Pi5 router together, install the latest Raspberry Pi OS Desktop (x64) onto the micro SD card and insert.
 
