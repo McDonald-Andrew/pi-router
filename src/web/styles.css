@@ -29,7 +29,7 @@ button {
   align-items: center;
   justify-content: space-between;
   background: #fff;
-  border-bottom: 3px solid #6d4aff;
+  border-bottom: 3px solid #102a43;
 }
 
 .brand {
@@ -45,6 +45,7 @@ button {
 }
 
 .brand-title {
+  color: #102a43;
   font-size: 20px;
   font-weight: 600;
 }
@@ -113,22 +114,23 @@ h2 {
   align-items: center;
   justify-content: center;
   flex: 0 0 14px;
-  border: 1px solid #6d4aff;
+  border: 1px solid #687078;
   border-radius: 50%;
   background: #fff;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 0;
   cursor: help;
   outline: none;
-  color: #6d4aff;
+  color: #687078;
 }
 
 .info-tip:hover,
 .info-tip:focus {
   background: #fff;
-  color: #6d4aff;
+  color: #138a45;
+  border: 1px solid #138a45;
 }
 
 .info-tip::before {
