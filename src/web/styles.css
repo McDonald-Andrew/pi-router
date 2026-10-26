@@ -510,7 +510,7 @@ tbody tr:last-child td {
   overflow: hidden;
 
   background-color: #ececf1;
-  accent-color: #6d4aff;
+  accent-color: #138a45;
 }
 
 .ip-progress progress::-webkit-progress-bar {
@@ -519,14 +519,14 @@ tbody tr:last-child td {
 }
 
 .ip-progress progress::-webkit-progress-value {
-  background: #6d4aff !important;
-  background-color: #6d4aff !important;
+  background: #138a45 !important;
+  background-color: #138a45 !important;
   border-radius: 999px;
 }
 
 .ip-progress progress::-moz-progress-bar {
-  background: #6d4aff !important;
-  background-color: #6d4aff !important;
+  background: #138a45 !important;
+  background-color: #138a45 !important;
   border-radius: 999px;
 }
 
