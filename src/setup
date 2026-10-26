@@ -498,19 +498,30 @@ install_user_source() {
     local mode="$3"
     local source
     local destination
+    local router_uid
+    local router_gid
 
     source="$SCRIPT_DIR/$source_rel"
     destination="$(
         root_path \
             "$ROUTER_HOME/$relative_destination"
     )"
+    router_uid="$(id -u "$ROUTER_USER")"
+    router_gid="$(id -g "$ROUTER_USER")"
 
     [[ -f "$source" ]] ||
         die "missing source file: $source"
 
-    mkdir -p "$(dirname "$destination")"
+    run_root install \
+        -d \
+        -o "$router_uid" \
+        -g "$router_gid" \
+        -m 0755 \
+        "$(dirname "$destination")"
 
-    install \
+    run_root install \
+        -o "$router_uid" \
+        -g "$router_gid" \
         -m "$mode" \
         "$source" \
         "$destination"
