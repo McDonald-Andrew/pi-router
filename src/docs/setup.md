@@ -412,7 +412,7 @@ protonvpn connect
 
 for normal router operation.
 
-The dynamic VPN endpoint refresh infrastructure is installed and its timer is enabled, but the initial endpoint database build is intentionally deferred. Building that database is not an installation gate.
+The dynamic IP blocklist refresh infrastructure is installed and its timer is enabled, but the initial endpoint database build is intentionally deferred. Building that database is not an installation gate.
 
 Successful completion must include:
 
@@ -655,10 +655,10 @@ FINAL VERIFICATION PASSED
 
 The checks below are additional diagnostics and inspection commands. They do not replace the canonical `final-verify` phase.
 
-Verify that the deferred VPN endpoint refresh timer is installed and enabled:
+Verify that the deferred IP blocklist refresh timer is installed and enabled:
 
 ```bash
-systemctl is-enabled proton-router-vpn-refresh.timer
+systemctl is-enabled proton-router-ip-refresh.timer
 ```
 
 Expected:
@@ -868,9 +868,9 @@ A fresh build is considered successful when all of the following are true:
 - the web service is unreachable from the WAN.
 - the generated sudoers policy grants the router user only the Proton bootstrap commands and the two required `proton-bypass` mutation forms.
 - no credentials, private keys, real keyring files, or real bypass-device identities are present in the Git repository.
-- `proton-router-vpn-refresh.timer` is installed and enabled.
-- installation does not require an initial dynamic VPN endpoint database build to complete successfully.
-- the dynamic VPN endpoint database can be built later by the scheduled timer or by an explicit manual/web refresh.
+- `proton-router-ip-refresh.timer` is installed and enabled.
+- installation does not require an initial dynamic IP blocklist database build to complete successfully.
+- the dynamic IP blocklist database can be built later by the scheduled timer or by an explicit manual/web refresh.
 
 If any one of these fails during a clean-room build, record the failing step before modifying the procedure.
 

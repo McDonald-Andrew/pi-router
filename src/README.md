@@ -159,7 +159,7 @@ blocked_vpn_endpoints_v4
 Automatic refresh is handled by:
 
 ```text
-proton-router-vpn-refresh.timer
+proton-router-ip-refresh.timer
 ```
 
 The default schedule is every six hours:
@@ -176,15 +176,15 @@ The initial endpoint-database build is not required to complete installation. Th
 Useful diagnostics:
 
 ```bash
-sudo systemctl status proton-router-vpn-refresh.service
-sudo systemctl status proton-router-vpn-refresh.timer
-sudo journalctl -u proton-router-vpn-refresh.service --no-pager
+sudo systemctl status proton-router-ip-refresh.service
+sudo systemctl status proton-router-ip-refresh.timer
+sudo journalctl -u proton-router-ip-refresh.service --no-pager
 ```
 
 A manual CLI refresh can be started with:
 
 ```bash
-sudo systemctl start proton-router-vpn-refresh.service
+sudo systemctl start proton-router-ip-refresh.service
 ```
 
 ## Local web interface
@@ -205,7 +205,7 @@ The interface shows:
 - LAN/router information
 - known LAN clients
 - current per-client Proton/raw-WAN bypass state
-- VPN endpoint-block database status
+- IP blocklist database status
 - endpoint count and normalized CIDR count
 - last and next endpoint refresh information
 - live progress for a manual endpoint refresh
@@ -213,7 +213,7 @@ The interface shows:
 The UI can:
 
 - add/remove bypass for known LAN MAC/IPv4 pairs
-- trigger the VPN endpoint refresh service
+- trigger the IP blocklist refresh service
 - refresh displayed client/status information
 
 The backend exposes purpose-specific API routes rather than a general shell endpoint.
@@ -392,8 +392,8 @@ src/
 │   ├── nftables.conf
 │   ├── proton-bypass-devices.conf.example
 │   ├── proton-repository.conf
-│   ├── proton-router-vpn-refresh.service
-│   ├── proton-router-vpn-refresh.timer
+│   ├── proton-router-ip-refresh.service
+│   ├── proton-router-ip-refresh.timer
 │   ├── proton-router-web.service
 │   ├── proton-router.conf.example
 │   ├── protonvpn-autoconnect.service
@@ -402,25 +402,24 @@ src/
 ├── docs/
 │   └── setup.md
 ├── lib/
-│   └── proton-router/
-│       └── vpn-block/
-│           ├── normalize.py
-│           └── adapters/
-│               ├── hideme_adapter.py
-│               ├── iplocate_adapter.py
-│               ├── nord_adapter.py
-│               ├── pia_adapter.py
-│               ├── privado_adapter.py
-│               ├── proton_adapter.py
-│               ├── surfshark_adapter.py
-│               ├── tor_adapter.py
-│               ├── tunnelbear_adapter.py
-│               └── windscribe_adapter.py
+│   └── ip-block/
+│       ├── normalize.py
+│       └── adapters/
+│           ├── hideme_adapter.py
+│           ├── iplocate_adapter.py
+│           ├── nord_adapter.py
+│           ├── pia_adapter.py
+│           ├── privado_adapter.py
+│           ├── proton_adapter.py
+│           ├── surfshark_adapter.py
+│           ├── tor_adapter.py
+│           ├── tunnelbear_adapter.py
+│           └── windscribe_adapter.py
 ├── scripts/
 │   ├── proton-bypass
 │   ├── proton-keyring-init
 │   ├── proton-router-apply-conf
-│   ├── proton-router-vpn-refresh
+│   ├── proton-router-ip-refresh
 │   ├── protonvpn-autoconnect
 │   └── protonvpn-healthcheck
 └── web/
@@ -455,7 +454,7 @@ Also do not commit machine-generated files such as:
 /etc/systemd/system/proton-keyring-init.service
 ```
 
-VPN endpoint run snapshots and last-known-good provider data under `/var/lib/proton-router/vpn-block/` are runtime state and should not be treated as repository source.
+IP blocklist run snapshots and last-known-good provider data under `/var/lib/proton-router/ip-block/` are runtime state and should not be treated as repository source.
 
 ## Quick verification
 
@@ -469,7 +468,7 @@ ip -4 rule show
 ip -4 route show table 200
 systemctl --user status protonvpn-autoconnect.service --no-pager
 systemctl --user status proton-router-web.service --no-pager
-sudo systemctl status proton-router-vpn-refresh.timer --no-pager
+sudo systemctl status proton-router-ip-refresh.timer --no-pager
 ```
 
 The canonical end-to-end verification is:
