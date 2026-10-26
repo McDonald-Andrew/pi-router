@@ -1,12 +1,12 @@
 [Unit]
-Description=Refresh VPN endpoint blocklist every 6 hours
+Description=Refresh IP blocklist every 6 hours
 
 [Timer]
 OnCalendar=*-*-* 00,06,12,18:00:00
 AccuracySec=1s
 RandomizedDelaySec=0
 
-Unit=proton-router-vpn-refresh.service
+Unit=proton-router-ip-refresh.service
 
 [Install]
 WantedBy=timers.target
