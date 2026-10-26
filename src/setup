@@ -567,13 +567,13 @@ phase_files() {
         0755
 
     install_system_source \
-        scripts/proton-router-vpn-refresh \
-        /usr/local/sbin/proton-router-vpn-refresh \
+        scripts/proton-router-ip-refresh \
+        /usr/local/sbin/proton-router-ip-refresh \
         0755
 
     install_system_tree \
-        lib/proton-router/vpn-block \
-        /usr/local/lib/proton-router/vpn-block \
+        lib/ip-block \
+        /usr/local/lib/proton-router/ip-block \
         0755
 
     #
@@ -595,13 +595,13 @@ phase_files() {
         0644
 
     install_system_source \
-        config/proton-router-vpn-refresh.service \
-        /etc/systemd/system/proton-router-vpn-refresh.service \
+        config/proton-router-ip-refresh.service \
+        /etc/systemd/system/proton-router-ip-refresh.service \
         0644
 
     install_system_source \
-        config/proton-router-vpn-refresh.timer \
-        /etc/systemd/system/proton-router-vpn-refresh.timer \
+        config/proton-router-ip-refresh.timer \
+        /etc/systemd/system/proton-router-ip-refresh.timer \
         0644
 
     install_system_source \
@@ -3706,7 +3706,7 @@ phase_post_reboot() (
     phase_proton
     phase_managed_connect
 
-    run_root systemctl enable --now proton-router-vpn-refresh.timer
+    run_root systemctl enable --now proton-router-ip-refresh.timer
 
     # Proton is now proven working. LAN clients may finally receive this
     # router as their default gateway and DNS server.
@@ -4030,8 +4030,8 @@ verify_final_artifact_tree() {
         0 0 755
 
     verify_static_source_install \
-        scripts/proton-router-vpn-refresh \
-        /usr/local/sbin/proton-router-vpn-refresh \
+        scripts/proton-router-ip-refresh \
+        /usr/local/sbin/proton-router-ip-refresh \
         0 0 755
 
     verify_static_source_install \
@@ -4040,13 +4040,13 @@ verify_final_artifact_tree() {
         0 0 644
 
     verify_static_source_install \
-        config/proton-router-vpn-refresh.service \
-        /etc/systemd/system/proton-router-vpn-refresh.service \
+        config/proton-router-ip-refresh.service \
+        /etc/systemd/system/proton-router-ip-refresh.service \
         0 0 644
 
     verify_static_source_install \
-        config/proton-router-vpn-refresh.timer \
-        /etc/systemd/system/proton-router-vpn-refresh.timer \
+        config/proton-router-ip-refresh.timer \
+        /etc/systemd/system/proton-router-ip-refresh.timer \
         0 0 644
 
     verify_static_source_install \
@@ -4292,7 +4292,7 @@ verify_final_runtime() {
         dnsmasq.service \
         lightdm.service \
         proton-keyring-init.service \
-        proton-router-vpn-refresh.timer
+        proton-router-ip-refresh.timer
     do
         state="$(
             systemctl is-enabled "$unit" \
@@ -4318,7 +4318,7 @@ verify_final_runtime() {
         nftables.service \
         dnsmasq.service \
         lightdm.service \
-        proton-router-vpn-refresh.timer
+        proton-router-ip-refresh.timer
     do
         state="$(
             systemctl is-active "$unit" \
