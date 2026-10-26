@@ -1,8 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
 let busyKey = null;
-let vpnBlockBusy = false;
-let vpnProgressTimer = null;
+let ipBlockBusy = false;
+let ipProgressTimer = null;
 let refreshTimer = null;
 
 function setDot(element, state) {
@@ -230,21 +230,21 @@ async function changeBypass(client) {
   }
 }
 
-function showVpnBlockMessage(
+function showIpBlockMessage(
   text,
   kind = "success"
 ) {
-  const box = $("vpnBlockMessage");
+  const box = $("ipBlockMessage");
 
   box.textContent = text;
   box.className = `message ${kind}`;
   box.hidden = false;
 
   window.clearTimeout(
-    showVpnBlockMessage.timer
+    showIpBlockMessage.timer
   );
 
-  showVpnBlockMessage.timer =
+  showIpBlockMessage.timer =
     window.setTimeout(
       () => {
         box.hidden = true;
@@ -254,7 +254,7 @@ function showVpnBlockMessage(
 }
 
 
-function readableVpnMode(value) {
+function readableIpMode(value) {
   if (!value) {
     return "—";
   }
@@ -266,51 +266,51 @@ function readableVpnMode(value) {
 }
 
 
-function scheduleVpnProgressPoll(
+function scheduleIpProgressPoll(
   refreshing
 ) {
   if (
     !refreshing
-    || vpnBlockBusy
+    || ipBlockBusy
   ) {
-    if (vpnProgressTimer !== null) {
+    if (ipProgressTimer !== null) {
       window.clearTimeout(
-        vpnProgressTimer
+        ipProgressTimer
       );
 
-      vpnProgressTimer = null;
+      ipProgressTimer = null;
     }
 
     return;
   }
 
-  if (vpnProgressTimer !== null) {
+  if (ipProgressTimer !== null) {
     return;
   }
 
-  vpnProgressTimer =
+  ipProgressTimer =
     window.setTimeout(
       async () => {
-        vpnProgressTimer = null;
+        ipProgressTimer = null;
 
         if (document.hidden) {
-          scheduleVpnProgressPoll(
+          scheduleIpProgressPoll(
             true
           );
 
           return;
         }
 
-        await refreshVpnBlockStatus();
+        await refreshIpBlockStatus();
       },
       1000
     );
 }
 
 
-function renderVpnBlock(payload) {
+function renderIpBlock(payload) {
   const state =
-    payload.vpn_block || {};
+    payload.ip_block || {};
 
   const ready =
     Boolean(state.ready);
@@ -334,13 +334,13 @@ function renderVpnBlock(payload) {
 
 
   const progressWrap =
-    $("vpnBlockProgress");
+    $("ipBlockProgress");
 
   const progressBar =
-    $("vpnBlockProgressBar");
+    $("ipBlockProgressBar");
 
   progressWrap.hidden =
-    !(refreshing || vpnBlockBusy);
+    !(refreshing || ipBlockBusy);
 
   progressBar.value =
     progress;
@@ -348,33 +348,33 @@ function renderVpnBlock(payload) {
   progressBar.textContent =
     `${progress}%`;
 
-  $("vpnBlockProgressPercent").textContent =
+  $("ipBlockProgressPercent").textContent =
     `${progress}%`;
 
-  $("vpnBlockProgressLabel").textContent =
+  $("ipBlockProgressLabel").textContent =
     progressPhase;
 
-  scheduleVpnProgressPoll(
+  scheduleIpProgressPoll(
     refreshing
   );
 
-  $("vpnBlockEndpointCount").textContent =
+  $("ipBlockEndpointCount").textContent =
     state.ipv4_count ?? "—";
 
-  $("vpnBlockCidrCount").textContent =
+  $("ipBlockCidrCount").textContent =
     state.cidr_count ?? "—";
 
   const updated =
     state.updated || "";
 
-  $("vpnBlockUpdated").dataset.raw =
+  $("ipBlockUpdated").dataset.raw =
     updated;
 
   if (updated) {
     const parsed =
       new Date(updated);
 
-    $("vpnBlockUpdated").textContent =
+    $("ipBlockUpdated").textContent =
       Number.isNaN(
         parsed.getTime()
       )
@@ -382,33 +382,33 @@ function renderVpnBlock(payload) {
         : parsed.toLocaleString();
 
   } else {
-    $("vpnBlockUpdated").textContent =
+    $("ipBlockUpdated").textContent =
       "—";
   }
 
-  $("vpnBlockNext").textContent =
+  $("ipBlockNext").textContent =
     state.next_refresh || "—";
 
 
 
   const button =
-    $("vpnBlockRefreshButton");
+    $("ipBlockRefreshButton");
 
   button.disabled =
-    vpnBlockBusy || refreshing;
+    ipBlockBusy || refreshing;
 
   button.textContent =
-    vpnBlockBusy || refreshing
+    ipBlockBusy || refreshing
       ? "Refreshing..."
       : "Refresh Endpoints";
 }
 
 
-async function refreshVpnBlockStatus() {
+async function refreshIpBlockStatus() {
   try {
-    renderVpnBlock(
+    renderIpBlock(
       await api(
-        "/api/vpn-block"
+        "/api/ip-block"
       )
     );
 
@@ -418,18 +418,18 @@ async function refreshVpnBlockStatus() {
 }
 
 
-async function startVpnBlockRefresh() {
-  if (vpnBlockBusy) {
+async function startIpBlockRefresh() {
+  if (ipBlockBusy) {
     return;
   }
 
-  vpnBlockBusy = true;
+  ipBlockBusy = true;
 
   const button =
-    $("vpnBlockRefreshButton");
+    $("ipBlockRefreshButton");
 
   const before =
-    $("vpnBlockUpdated").dataset.raw
+    $("ipBlockUpdated").dataset.raw
     || "";
 
   button.disabled = true;
@@ -439,15 +439,15 @@ async function startVpnBlockRefresh() {
 
   try {
     const result = await api(
-      "/api/vpn-block/refresh",
+      "/api/ip-block/refresh",
       {
         method: "POST",
       }
     );
 
-    showVpnBlockMessage(
+    showIpBlockMessage(
       result.message
-      || "VPN endpoint refresh started."
+      || "IP blocklist refresh started."
     );
 
     let completed = false;
@@ -467,13 +467,13 @@ async function startVpnBlockRefresh() {
       );
 
       const payload = await api(
-        "/api/vpn-block"
+        "/api/ip-block"
       );
 
-      renderVpnBlock(payload);
+      renderIpBlock(payload);
 
       const state =
-        payload.vpn_block || {};
+        payload.ip_block || {};
 
       if (
         !state.refreshing
@@ -482,8 +482,8 @@ async function startVpnBlockRefresh() {
       ) {
         completed = true;
 
-        showVpnBlockMessage(
-          "VPN endpoint database refreshed."
+        showIpBlockMessage(
+          "IP blocklist refreshed."
         );
 
         break;
@@ -497,16 +497,16 @@ async function startVpnBlockRefresh() {
     }
 
   } catch (error) {
-    showVpnBlockMessage(
+    showIpBlockMessage(
       error.message
-      || "Unable to refresh VPN endpoints.",
+      || "Unable to refresh IP blocklist.",
       "error"
     );
 
   } finally {
-    vpnBlockBusy = false;
+    ipBlockBusy = false;
 
-    await refreshVpnBlockStatus();
+    await refreshIpBlockStatus();
   }
 }
 
@@ -562,7 +562,7 @@ async function refreshAll() {
   await Promise.all([
     refreshStatus(),
     refreshClients(),
-    refreshVpnBlockStatus(),
+    refreshIpBlockStatus(),
   ]);
 
 }
@@ -588,9 +588,9 @@ $("refreshButton").addEventListener(
   refreshLanClientsFromButton
 );
 
-$("vpnBlockRefreshButton").addEventListener(
+$("ipBlockRefreshButton").addEventListener(
   "click",
-  startVpnBlockRefresh
+  startIpBlockRefresh
 );
 
 refreshAll();

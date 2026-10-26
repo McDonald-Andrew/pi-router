@@ -143,24 +143,24 @@
 
     </section>
 
-    <section id="vpnBlockCard" class="card clients-card">
+    <section id="ipBlockCard" class="card clients-card">
       <div class="clients-header">
         <div class="title-with-info">
-          <h2>VPN Endpoint Blocking</h2>
+          <h2>IP Blocking</h2>
           <span
             class="info-tip"
             tabindex="0"
             role="img"
-            aria-label="VPN endpoint blocking information"
-            data-tip="Blocks LAN clients from connecting directly to known commercial VPN server endpoints. The endpoint database refreshes automatically every six hours."
+            aria-label="IP blocking information"
+            data-tip="Blocks LAN clients from connecting directly to known commercial server endpoints. The endpoint database refreshes automatically every six hours."
           >i</span>
         </div>
 
-        <div class="vpn-block-controls">
+        <div class="ip-block-controls">
 
 
           <button
-            id="vpnBlockRefreshButton"
+            id="ipBlockRefreshButton"
             class="secondary-button"
             type="button"
           >
@@ -172,23 +172,23 @@
 
 
       <div
-        id="vpnBlockMessage"
+        id="ipBlockMessage"
         class="message"
         hidden
       ></div>
 
       <div
-        id="vpnBlockProgress"
-        class="vpn-progress"
+        id="ipBlockProgress"
+        class="ip-progress"
         hidden
       >
-        <div class="vpn-progress-heading">
-          <span id="vpnBlockProgressLabel">
+        <div class="ip-progress-heading">
+          <span id="ipBlockProgressLabel">
             Starting refresh...
           </span>
 
           <span
-            id="vpnBlockProgressPercent"
+            id="ipBlockProgressPercent"
             class="mono"
           >
             0%
@@ -196,7 +196,7 @@
         </div>
 
         <progress
-          id="vpnBlockProgressBar"
+          id="ipBlockProgressBar"
           max="100"
           value="0"
         >
@@ -207,22 +207,22 @@
       <dl class="status-list">
         <div>
           <dt>Endpoints</dt>
-          <dd id="vpnBlockEndpointCount">—</dd>
+          <dd id="ipBlockEndpointCount">—</dd>
         </div>
 
         <div>
           <dt>Normalized CIDRs</dt>
-          <dd id="vpnBlockCidrCount">—</dd>
+          <dd id="ipBlockCidrCount">—</dd>
         </div>
 
         <div>
           <dt>Last updated</dt>
-          <dd id="vpnBlockUpdated">—</dd>
+          <dd id="ipBlockUpdated">—</dd>
         </div>
 
         <div>
           <dt>Next automatic refresh</dt>
-          <dd id="vpnBlockNext">—</dd>
+          <dd id="ipBlockNext">—</dd>
         </div>
 
         

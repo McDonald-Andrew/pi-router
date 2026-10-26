@@ -466,17 +466,17 @@ color: #777;
   }
 }
 
-/* VPN endpoint refresh progress */
+/* IP blocklist refresh progress */
 
-.vpn-progress {
+.ip-progress {
   margin: 0 0 1.25rem;
 }
 
-#vpnBlockMessage {
+#ipBlockMessage {
   margin-bottom: 0.75rem;
 }
 
-.vpn-progress-heading {
+.ip-progress-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -485,7 +485,7 @@ color: #777;
   font-size: 0.9rem;
 }
 
-.vpn-progress progress {
+.ip-progress progress {
   display: block;
   width: 100%;
   height: 1rem;
@@ -501,18 +501,18 @@ color: #777;
   accent-color: #6d4aff;
 }
 
-.vpn-progress progress::-webkit-progress-bar {
+.ip-progress progress::-webkit-progress-bar {
   background-color: #ececf1;
   border-radius: 999px;
 }
 
-.vpn-progress progress::-webkit-progress-value {
+.ip-progress progress::-webkit-progress-value {
   background: #6d4aff !important;
   background-color: #6d4aff !important;
   border-radius: 999px;
 }
 
-.vpn-progress progress::-moz-progress-bar {
+.ip-progress progress::-moz-progress-bar {
   background: #6d4aff !important;
   background-color: #6d4aff !important;
   border-radius: 999px;
@@ -530,10 +530,10 @@ color: #777;
 }
 
 /*
- * The VPN block heading also lost its text-state
+ * The IP block heading also lost its text-state
  * row, so retain a small gap before its contents.
  */
-#vpnBlockCard .clients-header {
+#ipBlockCard .clients-header {
   margin-bottom: 0.75rem;
 }
 
@@ -542,11 +542,11 @@ color: #777;
  * Endpoints, with both controls anchored to the
  * right side of the card.
  */
-.vpn-block-controls {
+.ip-block-controls {
   margin-left: auto;
 }
 
 /* Match VPN/client card spacing to hero section spacing */
-#vpnBlockCard {
+#ipBlockCard {
   margin-bottom: 16px;
 }

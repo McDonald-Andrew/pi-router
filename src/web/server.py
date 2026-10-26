@@ -27,16 +27,16 @@ IP_CMD = "/usr/sbin/ip"
 SUDO_CMD = "/usr/bin/sudo"
 SYSTEMCTL_CMD = "/usr/bin/systemctl"
 
-VPN_BLOCK_STATUS_FILE = Path(
-    "/var/lib/proton-router/vpn-block/current/status"
+IP_BLOCK_STATUS_FILE = Path(
+    "/var/lib/proton-router/ip-block/current/status"
 )
 
-VPN_REFRESH_SERVICE = (
-    "proton-router-vpn-refresh.service"
+IP_REFRESH_SERVICE = (
+    "proton-router-ip-refresh.service"
 )
 
-VPN_REFRESH_TIMER = (
-    "proton-router-vpn-refresh.timer"
+IP_REFRESH_TIMER = (
+    "proton-router-ip-refresh.timer"
 )
 
 DEFAULT_STATIC_ROOT = Path("/usr/local/share/proton-router-web")
@@ -785,12 +785,12 @@ def pair_is_observed(
     )
 
 
-def vpn_block_status() -> dict:
+def ip_block_status() -> dict:
     fields: dict[str, str] = {}
 
     try:
         lines = (
-            VPN_BLOCK_STATUS_FILE.read_text(
+            IP_BLOCK_STATUS_FILE.read_text(
                 encoding="utf-8"
             ).splitlines()
         )
@@ -818,7 +818,7 @@ def vpn_block_status() -> dict:
             [
                 SYSTEMCTL_CMD,
                 "show",
-                VPN_REFRESH_SERVICE,
+                IP_REFRESH_SERVICE,
                 "-p",
                 "ActiveState",
                 "-p",
@@ -867,7 +867,7 @@ def vpn_block_status() -> dict:
     )
 
     match = re.fullmatch(
-        r"VPN_PROGRESS\|([0-9]{1,3})\|(.*)",
+        r"IP_PROGRESS\|([0-9]{1,3})\|(.*)",
         status_text,
     )
 
@@ -891,7 +891,7 @@ def vpn_block_status() -> dict:
             [
                 SYSTEMCTL_CMD,
                 "show",
-                VPN_REFRESH_TIMER,
+                IP_REFRESH_TIMER,
                 "-p",
                 "NextElapseUSecRealtime",
                 "--value",
@@ -984,7 +984,7 @@ def vpn_block_status() -> dict:
     }
 
 
-def start_vpn_block_refresh() -> tuple[
+def start_ip_block_refresh() -> tuple[
     bool,
     str,
 ]:
@@ -996,7 +996,7 @@ def start_vpn_block_refresh() -> tuple[
                 SYSTEMCTL_CMD,
                 "--no-block",
                 "start",
-                VPN_REFRESH_SERVICE,
+                IP_REFRESH_SERVICE,
             ],
             timeout=5,
         )
@@ -1027,14 +1027,14 @@ def start_vpn_block_refresh() -> tuple[
                 if output
                 else (
                     "Unable to start "
-                    "VPN endpoint refresh."
+                    "IP blocklist refresh."
                 )
             ),
         )
 
     return (
         True,
-        "VPN endpoint refresh started.",
+        "IP blocklist refresh started.",
     )
 
 
@@ -1470,12 +1470,12 @@ class Handler(
 
             return
 
-        if path == "/api/vpn-block":
+        if path == "/api/ip-block":
             self.send_json(
                 {
                     "ok": True,
-                    "vpn_block": (
-                        vpn_block_status()
+                    "ip_block": (
+                        ip_block_status()
                     ),
                 }
             )
@@ -1512,8 +1512,8 @@ class Handler(
             self.path
         ).path
 
-        if path == "/api/vpn-block/refresh":
-            self.handle_vpn_block_refresh()
+        if path == "/api/ip-block/refresh":
+            self.handle_ip_block_refresh()
             return
 
         if path != "/api/bypass":
@@ -1557,11 +1557,11 @@ class Handler(
             "remove",
         )
 
-    def handle_vpn_block_refresh(
+    def handle_ip_block_refresh(
         self,
     ) -> None:
         ok, message = (
-            start_vpn_block_refresh()
+            start_ip_block_refresh()
         )
 
         if not ok:
@@ -1571,7 +1571,7 @@ class Handler(
                     message
                     or (
                         "Unable to start "
-                        "VPN endpoint refresh."
+                        "IP blocklist refresh."
                     )
                 ),
             )
@@ -1582,8 +1582,8 @@ class Handler(
             {
                 "ok": True,
                 "message": message,
-                "vpn_block": (
-                    vpn_block_status()
+                "ip_block": (
+                    ip_block_status()
                 ),
             }
         )
