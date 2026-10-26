@@ -215,8 +215,18 @@ The UI can:
 - add/remove bypass for known LAN MAC/IPv4 pairs
 - trigger the IP blocklist refresh service
 - refresh displayed client/status information
+- check GitHub for a newer router release and install it automatically
 
 The backend exposes purpose-specific API routes rather than a general shell endpoint.
+
+Web updates are disabled until the release repository is configured. Replace the
+placeholder in `/etc/proton-router-update.conf` with the GitHub repository URL
+in `https://github.com/OWNER/REPOSITORY` form. The release must contain the matching
+`proton-router-vX.Y.Z.tar.gz` and `proton-router-vX.Y.Z.sha256.txt` assets.
+When an update is available, the updater verifies the published SHA-256,
+validates the archive layout, installs the router files, reapplies the existing
+router configuration, and reboots the Pi. The repository setting is preserved
+across updates.
 
 The web server listens on IPv4 port 8080, while the router's nftables input policy permits access from the LAN and loopback and drops unsolicited WAN input. The web interface should never be exposed by adding a WAN allow rule or port forward.
 
@@ -331,7 +341,7 @@ sudo proton-router-apply-conf
 - dnsmasq variables
 - LightDM autologin configuration
 - NetworkManager polkit policy
-- restricted sudoers policy for Proton VPN, web bypass add/remove operations, and exact endpoint refresh service
+- restricted sudoers policy for Proton VPN, web bypass add/remove operations, the exact endpoint refresh service, and the fixed router update service
 - keyring initialization service
 - bypass routing state
 
@@ -394,6 +404,8 @@ src/
 │   ├── proton-repository.conf
 │   ├── proton-router-ip-refresh.service
 │   ├── proton-router-ip-refresh.timer
+│   ├── proton-router-update.conf
+│   ├── proton-router-update.service
 │   ├── proton-router-web.service
 │   ├── proton-router.conf.example
 │   ├── protonvpn-autoconnect.service
@@ -420,6 +432,7 @@ src/
 │   ├── proton-keyring-init
 │   ├── proton-router-apply-conf
 │   ├── proton-router-ip-refresh
+│   ├── proton-router-update
 │   ├── protonvpn-autoconnect
 │   └── protonvpn-healthcheck
 └── web/

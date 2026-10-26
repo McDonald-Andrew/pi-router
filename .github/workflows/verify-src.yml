@@ -24,7 +24,7 @@ jobs:
 
       - name: Check Shell Syntax
         run: |
-          bash -n src/setup src/scripts/proton-router-ip-refresh
+          bash -n src/setup src/scripts/proton-router-ip-refresh src/scripts/proton-router-update
           sh -n src/scripts/proton-bypass src/scripts/proton-keyring-init src/scripts/proton-router-apply-conf src/scripts/protonvpn-autoconnect src/scripts/protonvpn-healthcheck
 
       - name: Check Python Syntax

@@ -4,6 +4,7 @@ let busyKey = null;
 let ipBlockBusy = false;
 let ipProgressTimer = null;
 let refreshTimer = null;
+let updateBusy = false;
 
 function setDot(element, state) {
   element.className = `status-dot ${state}`;
@@ -16,6 +17,21 @@ function showMessage(text, kind = "success") {
   box.hidden = false;
   window.clearTimeout(showMessage.timer);
   showMessage.timer = window.setTimeout(() => { box.hidden = true; }, 5000);
+}
+
+function showUpdateMessage(text, kind = "success", timeout = 6000) {
+  const box = $("updateMessage");
+  box.textContent = text;
+  box.className = `message ${kind}`;
+  box.hidden = false;
+  window.clearTimeout(showUpdateMessage.timer);
+
+  if (timeout > 0) {
+    showUpdateMessage.timer = window.setTimeout(
+      () => { box.hidden = true; },
+      timeout
+    );
+  }
 }
 
 async function api(path, options = {}) {
@@ -583,6 +599,61 @@ async function refreshLanClientsFromButton() {
   }
 }
 
+async function checkForUpdate() {
+  if (updateBusy) {
+    return;
+  }
+
+  updateBusy = true;
+
+  const button = $("updateButton");
+  button.disabled = true;
+  button.textContent = "Checking...";
+
+  let updateStarted = false;
+
+  try {
+    const result = await api("/api/update/check");
+
+    if (!result.update_available) {
+      showUpdateMessage("Up to date!");
+      return;
+    }
+
+    button.textContent = "Updating...";
+    showUpdateMessage(
+      `Installing ${result.latest_version}. The router will reboot when the update is ready.`,
+      "success",
+      0
+    );
+
+    const started = await api(
+      "/api/update",
+      { method: "POST" }
+    );
+
+    updateStarted = true;
+    button.textContent = "Update Started";
+    showUpdateMessage(
+      started.message
+      || "Update started. The router will reboot automatically.",
+      "success",
+      0
+    );
+  } catch (error) {
+    showUpdateMessage(
+      error.message || "Unable to check for updates.",
+      "error"
+    );
+  } finally {
+    if (!updateStarted) {
+      updateBusy = false;
+      button.disabled = false;
+      button.textContent = "Check for Update";
+    }
+  }
+}
+
 
 $("refreshButton").addEventListener(
   "click",
@@ -592,6 +663,11 @@ $("refreshButton").addEventListener(
 $("ipBlockRefreshButton").addEventListener(
   "click",
   startIpBlockRefresh
+);
+
+$("updateButton").addEventListener(
+  "click",
+  checkForUpdate
 );
 
 refreshAll();

@@ -1,0 +1,312 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+CONFIG_FILE="/etc/proton-router-update.conf"
+VERSION_FILE="/usr/local/share/proton-router-web/version.txt"
+STATUS_FILE="/var/lib/proton-router/update/status"
+PLACEHOLDER_REPOSITORY_URL="https://github.com/OWNER/REPOSITORY"
+GITHUB_API_VERSION="2022-11-28"
+
+WORK_DIR=""
+UPDATE_FINISHED=0
+ORIGINAL_VERSION=""
+
+write_status() {
+    local state="$1"
+    local message="$2"
+    local status_dir
+    local status_tmp
+
+    status_dir="$(dirname "$STATUS_FILE")"
+    install -d -m 0755 "$status_dir"
+    status_tmp="$STATUS_FILE.tmp.$$"
+
+    printf 'state=%s\nmessage=%s\n' \
+        "$state" \
+        "$message" > "$status_tmp"
+
+    chmod 0644 "$status_tmp"
+    mv -f "$status_tmp" "$STATUS_FILE"
+}
+
+cleanup() {
+    local exit_code=$?
+
+    if [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]]; then
+        rm -rf -- "$WORK_DIR"
+    fi
+
+    if (( exit_code != 0 && UPDATE_FINISHED == 0 )); then
+        if [[ -n "$ORIGINAL_VERSION" && -f "$VERSION_FILE" ]]; then
+            printf '%s\n' "$ORIGINAL_VERSION" > "$VERSION_FILE"
+        fi
+
+        write_status \
+            failed \
+            "Update failed. Check journalctl -u proton-router-update.service."
+    fi
+}
+
+trap cleanup EXIT
+
+die() {
+    printf 'proton-router-update: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ "$(id -u)" == "0" ]] ||
+    die "must run as root"
+
+[[ -r "$CONFIG_FILE" ]] ||
+    die "missing update configuration: $CONFIG_FILE"
+
+# This file is installed root-owned and contains only administrator-managed
+# updater settings.
+# shellcheck disable=SC1090
+source "$CONFIG_FILE"
+
+GITHUB_REPOSITORY_URL="${GITHUB_REPOSITORY_URL:-}"
+
+[[ "$GITHUB_REPOSITORY_URL" != "$PLACEHOLDER_REPOSITORY_URL" ]] ||
+    die "replace the GitHub repository URL in $CONFIG_FILE"
+
+[[ "$GITHUB_REPOSITORY_URL" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$ ]] ||
+    die "GITHUB_REPOSITORY_URL must use https://github.com/OWNER/REPOSITORY format"
+
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY_URL#https://github.com/}"
+GITHUB_REPOSITORY="${GITHUB_REPOSITORY%/}"
+
+[[ -r "$VERSION_FILE" ]] ||
+    die "missing installed version: $VERSION_FILE"
+
+command -v curl >/dev/null 2>&1 ||
+    die "curl is required"
+
+command -v python3 >/dev/null 2>&1 ||
+    die "python3 is required"
+
+command -v sha256sum >/dev/null 2>&1 ||
+    die "sha256sum is required"
+
+command -v tar >/dev/null 2>&1 ||
+    die "tar is required"
+
+CURRENT_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
+ORIGINAL_VERSION="$CURRENT_VERSION"
+WORK_DIR="$(mktemp -d /tmp/proton-router-update.XXXXXX)"
+RELEASE_JSON="$WORK_DIR/release.json"
+RELEASE_METADATA="$WORK_DIR/release-metadata"
+
+write_status checking "Checking GitHub for updates."
+
+curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --proto '=https' \
+    --tlsv1.2 \
+    --connect-timeout 10 \
+    --max-time 30 \
+    --header 'Accept: application/vnd.github+json' \
+    --header "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
+    --user-agent 'proton-router-updater' \
+    --output "$RELEASE_JSON" \
+    "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest"
+
+python3 - \
+    "$RELEASE_JSON" \
+    "$CURRENT_VERSION" \
+    > "$RELEASE_METADATA" <<'PY'
+import json
+import re
+import sys
+from pathlib import Path
+from urllib.parse import urlsplit
+
+version_re = re.compile(
+    r"^v?(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
+
+
+def parse_version(value):
+    match = version_re.fullmatch(value.strip())
+    if not match:
+        raise ValueError(f"invalid release version: {value}")
+    core = tuple(int(match.group(index)) for index in range(1, 4))
+    pre = tuple(match.group(4).split(".")) if match.group(4) else None
+    return core, pre
+
+
+def newer(candidate, current):
+    candidate_core, candidate_pre = parse_version(candidate)
+    current_core, current_pre = parse_version(current)
+    if candidate_core != current_core:
+        return candidate_core > current_core
+    if candidate_pre is None:
+        return current_pre is not None
+    if current_pre is None:
+        return False
+    for candidate_part, current_part in zip(candidate_pre, current_pre):
+        if candidate_part == current_part:
+            continue
+        candidate_numeric = candidate_part.isdigit()
+        current_numeric = current_part.isdigit()
+        if candidate_numeric and current_numeric:
+            return int(candidate_part) > int(current_part)
+        if candidate_numeric != current_numeric:
+            return not candidate_numeric
+        return candidate_part > current_part
+    return len(candidate_pre) > len(current_pre)
+
+
+payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if not isinstance(payload, dict):
+    raise ValueError("GitHub release response is not an object")
+
+tag = str(payload.get("tag_name", "")).strip()
+parse_version(tag)
+normalized_tag = tag if tag.startswith("v") else f"v{tag}"
+
+if not newer(tag, sys.argv[2]):
+    print("up-to-date")
+    print(normalized_tag)
+    raise SystemExit(0)
+
+archive_name = f"proton-router-{normalized_tag}.tar.gz"
+checksum_name = f"proton-router-{normalized_tag}.sha256.txt"
+assets = {
+    str(asset.get("name", "")): str(asset.get("browser_download_url", ""))
+    for asset in payload.get("assets", [])
+    if isinstance(asset, dict)
+}
+
+for name in (archive_name, checksum_name):
+    url = assets.get(name, "")
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"release asset is missing or invalid: {name}")
+
+print("update")
+print(normalized_tag)
+print(assets[archive_name])
+print(assets[checksum_name])
+PY
+
+mapfile -t RELEASE_FIELDS < "$RELEASE_METADATA"
+
+(( ${#RELEASE_FIELDS[@]} >= 2 )) ||
+    die "could not parse GitHub release metadata"
+
+LATEST_VERSION="${RELEASE_FIELDS[1]}"
+
+if [[ "${RELEASE_FIELDS[0]}" == "up-to-date" ]]; then
+    write_status current "Up to date!"
+    UPDATE_FINISHED=1
+    exit 0
+fi
+
+(( ${#RELEASE_FIELDS[@]} == 4 )) ||
+    die "latest release is missing required assets"
+
+ARCHIVE_NAME="proton-router-$LATEST_VERSION.tar.gz"
+CHECKSUM_NAME="proton-router-$LATEST_VERSION.sha256.txt"
+ARCHIVE_PATH="$WORK_DIR/$ARCHIVE_NAME"
+CHECKSUM_PATH="$WORK_DIR/$CHECKSUM_NAME"
+
+write_status downloading "Downloading $LATEST_VERSION."
+
+curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --proto '=https' \
+    --tlsv1.2 \
+    --connect-timeout 10 \
+    --max-time 300 \
+    --output "$ARCHIVE_PATH" \
+    "${RELEASE_FIELDS[2]}"
+
+curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --proto '=https' \
+    --tlsv1.2 \
+    --connect-timeout 10 \
+    --max-time 30 \
+    --output "$CHECKSUM_PATH" \
+    "${RELEASE_FIELDS[3]}"
+
+EXPECTED_SHA256="$(grep -Eio '[0-9a-f]{64}' "$CHECKSUM_PATH" | head -n 1 | tr '[:upper:]' '[:lower:]')"
+
+[[ "$EXPECTED_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+    die "release checksum file is invalid"
+
+(
+    cd "$WORK_DIR"
+    printf '%s  %s\n' "$EXPECTED_SHA256" "$ARCHIVE_NAME" |
+        sha256sum --check --status -
+) || die "release archive checksum does not match"
+
+python3 - "$ARCHIVE_PATH" "$LATEST_VERSION" <<'PY'
+import sys
+import tarfile
+from pathlib import PurePosixPath
+
+archive, version = sys.argv[1:]
+root = f"proton-router-{version}"
+
+with tarfile.open(archive, "r:gz") as bundle:
+    members = bundle.getmembers()
+    if not members:
+        raise ValueError("release archive is empty")
+    for member in members:
+        path = PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"unsafe archive path: {member.name}")
+        if not (member.name == root or member.name.startswith(root + "/")):
+            raise ValueError(f"unexpected archive path: {member.name}")
+        if not (member.isdir() or member.isfile()):
+            raise ValueError(f"unsupported archive entry: {member.name}")
+PY
+
+tar \
+    --extract \
+    --gzip \
+    --file "$ARCHIVE_PATH" \
+    --directory "$WORK_DIR" \
+    --no-same-owner \
+    --no-same-permissions
+
+RELEASE_DIR="$WORK_DIR/proton-router-$LATEST_VERSION"
+
+[[ -f "$RELEASE_DIR/setup" ]] ||
+    die "release does not contain setup"
+
+chmod 0755 "$RELEASE_DIR/setup"
+
+write_status installing "Installing $LATEST_VERSION."
+
+"$RELEASE_DIR/setup" \
+    --live \
+    --phase files \
+    --answers /etc/proton-router.conf \
+    --non-interactive \
+    --allow-live-install
+
+/usr/local/sbin/proton-router-apply-conf
+
+write_status rebooting "Installed $LATEST_VERSION; rebooting."
+
+/usr/bin/systemctl reboot ||
+    die "failed to reboot after installing $LATEST_VERSION"
+
+UPDATE_FINISHED=1

@@ -244,6 +244,11 @@ h2 {
   background: #f3f5f6;
 }
 
+.secondary-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 /* Counts */
 
 .summary-row {
@@ -431,6 +436,12 @@ tbody tr:last-child td {
     height: auto;
     min-height: 60px;
     padding: 12px 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  #updateButton {
+    margin-left: auto;
   }
 
   .shell {

@@ -18,7 +18,9 @@ import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
+from urllib.request import Request, urlopen
 
 CONFIG_FILE = Path("/etc/proton-router.conf")
 BYPASS_FILE = Path("/etc/proton-bypass/devices.conf")
@@ -26,6 +28,15 @@ PROTON_BYPASS = "/usr/local/sbin/proton-bypass"
 IP_CMD = "/usr/sbin/ip"
 SUDO_CMD = "/usr/bin/sudo"
 SYSTEMCTL_CMD = "/usr/bin/systemctl"
+UPDATE_CONFIG_FILE = Path(
+    "/etc/proton-router-update.conf"
+)
+UPDATE_SERVICE = "proton-router-update.service"
+UPDATE_REPOSITORY_PLACEHOLDER = (
+    "https://github.com/OWNER/REPOSITORY"
+)
+GITHUB_API_VERSION = "2022-11-28"
+MAX_RELEASE_RESPONSE = 1024 * 1024
 
 IP_BLOCK_STATUS_FILE = Path(
     "/var/lib/proton-router/ip-block/current/status"
@@ -45,13 +56,242 @@ DEFAULT_VERSION = "v0.0.1"
 MAX_BODY = 4096
 
 MAC_RE = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
+REPOSITORY_PATH_RE = re.compile(
+    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+)
+VERSION_RE = re.compile(
+    r"^v?(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
+)
 
 
 class ConfigError(RuntimeError):
     pass
 
 
-def read_shell_config(path: Path) -> dict[str, str]:
+def parse_version(
+    value: str,
+) -> tuple[
+    tuple[int, int, int],
+    tuple[str, ...] | None,
+]:
+    match = VERSION_RE.fullmatch(
+        value.strip()
+    )
+
+    if not match:
+        raise ValueError(
+            f"invalid release version: {value}"
+        )
+
+    core = tuple(
+        int(match.group(index))
+        for index in range(1, 4)
+    )
+
+    prerelease = (
+        tuple(match.group(4).split("."))
+        if match.group(4)
+        else None
+    )
+
+    return core, prerelease
+
+
+def version_is_newer(
+    candidate: str,
+    current: str,
+) -> bool:
+    candidate_core, candidate_pre = (
+        parse_version(candidate)
+    )
+    current_core, current_pre = (
+        parse_version(current)
+    )
+
+    if candidate_core != current_core:
+        return candidate_core > current_core
+
+    if candidate_pre is None:
+        return current_pre is not None
+
+    if current_pre is None:
+        return False
+
+    for candidate_part, current_part in zip(
+        candidate_pre,
+        current_pre,
+    ):
+        if candidate_part == current_part:
+            continue
+
+        candidate_numeric = (
+            candidate_part.isdigit()
+        )
+        current_numeric = current_part.isdigit()
+
+        if candidate_numeric and current_numeric:
+            return int(candidate_part) > int(
+                current_part
+            )
+
+        if candidate_numeric != current_numeric:
+            return not candidate_numeric
+
+        return candidate_part > current_part
+
+    return len(candidate_pre) > len(current_pre)
+
+
+def update_repository() -> str:
+    try:
+        values = read_shell_config_values(
+            UPDATE_CONFIG_FILE
+        )
+    except ConfigError:
+        raise
+
+    repository_url = values.get(
+        "GITHUB_REPOSITORY_URL",
+        "",
+    )
+
+    if (
+        not repository_url
+        or repository_url
+        == UPDATE_REPOSITORY_PLACEHOLDER
+    ):
+        raise ConfigError(
+            "Update repository is not configured."
+        )
+
+    try:
+        parsed = urlsplit(repository_url)
+    except ValueError as exc:
+        raise ConfigError(
+            "Update repository URL is invalid."
+        ) from exc
+
+    repository = parsed.path.strip("/")
+
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc.lower() != "github.com"
+        or parsed.query
+        or parsed.fragment
+        or not REPOSITORY_PATH_RE.fullmatch(
+            repository
+        )
+    ):
+        raise ConfigError(
+            "Update repository must be an https://github.com/OWNER/REPOSITORY URL."
+        )
+
+    return repository
+
+
+def latest_release(
+    current_version: str,
+) -> dict:
+    repository = update_repository()
+    request = Request(
+        "https://api.github.com/repos/"
+        f"{repository}/releases/latest",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "proton-router-updater",
+            "X-GitHub-Api-Version": GITHUB_API_VERSION,
+        },
+    )
+
+    try:
+        with urlopen(
+            request,
+            timeout=10,
+        ) as response:
+            body = response.read(
+                MAX_RELEASE_RESPONSE + 1
+            )
+    except HTTPError as exc:
+        raise RuntimeError(
+            "GitHub release check failed "
+            f"(HTTP {exc.code})."
+        ) from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise RuntimeError(
+            "Unable to reach GitHub for the release check."
+        ) from exc
+
+    if len(body) > MAX_RELEASE_RESPONSE:
+        raise RuntimeError(
+            "GitHub release response was too large."
+        )
+
+    try:
+        payload = json.loads(
+            body.decode("utf-8")
+        )
+    except (
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise RuntimeError(
+            "GitHub returned an invalid release response."
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise RuntimeError(
+            "GitHub returned an invalid release response."
+        )
+
+    tag = str(
+        payload.get("tag_name", "")
+    ).strip()
+
+    try:
+        parse_version(tag)
+        update_available = version_is_newer(
+            tag,
+            current_version,
+        )
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+
+    normalized_tag = (
+        tag if tag.startswith("v") else f"v{tag}"
+    )
+    required_assets = {
+        f"proton-router-{normalized_tag}.tar.gz",
+        f"proton-router-{normalized_tag}.sha256.txt",
+    }
+    available_assets = {
+        str(item.get("name", ""))
+        for item in payload.get("assets", [])
+        if isinstance(item, dict)
+    }
+
+    if (
+        update_available
+        and not required_assets.issubset(
+            available_assets
+        )
+    ):
+        raise RuntimeError(
+            "The latest release is missing its router archive or checksum."
+        )
+
+    return {
+        "current_version": current_version,
+        "latest_version": normalized_tag,
+        "update_available": update_available,
+    }
+
+
+def read_shell_config_values(
+    path: Path,
+) -> dict[str, str]:
     values: dict[str, str] = {}
 
     try:
@@ -99,6 +339,12 @@ def read_shell_config(path: Path) -> dict[str, str]:
             )
 
         values[key] = parts[0]
+
+    return values
+
+
+def read_shell_config(path: Path) -> dict[str, str]:
+    values = read_shell_config_values(path)
 
     required = (
         "LAN_IF",
@@ -1039,6 +1285,51 @@ def start_ip_block_refresh() -> tuple[
     )
 
 
+def start_router_update() -> tuple[
+    bool,
+    str,
+]:
+    try:
+        proc = run_command(
+            [
+                SUDO_CMD,
+                "-n",
+                SYSTEMCTL_CMD,
+                "--no-block",
+                "start",
+                UPDATE_SERVICE,
+            ],
+            timeout=5,
+        )
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        return False, str(exc)
+
+    output = "\n".join(
+        part.strip()
+        for part in (
+            proc.stdout,
+            proc.stderr,
+        )
+        if part.strip()
+    )
+
+    if proc.returncode != 0:
+        return (
+            False,
+            output[-500:]
+            if output
+            else "Unable to start the router update.",
+        )
+
+    return (
+        True,
+        "Update started. The router will reboot automatically when installation completes.",
+    )
+
+
 def set_bypass(
     config: dict[str, str],
     action: str,
@@ -1496,6 +1787,28 @@ class Handler(
 
             return
 
+        if path == "/api/update/check":
+            try:
+                release = latest_release(
+                    self.server.router_version
+                )
+            except (ConfigError, RuntimeError) as exc:
+                self.fail_json(
+                    HTTPStatus.BAD_GATEWAY,
+                    str(exc),
+                )
+
+                return
+
+            self.send_json(
+                {
+                    "ok": True,
+                    **release,
+                }
+            )
+
+            return
+
         if path == "/api/bypass":
             self.send_json(
                 {
@@ -1528,6 +1841,10 @@ class Handler(
 
         if path == "/api/ip-block/refresh":
             self.handle_ip_block_refresh()
+            return
+
+        if path == "/api/update":
+            self.handle_router_update()
             return
 
         if path != "/api/bypass":
@@ -1600,6 +1917,37 @@ class Handler(
                     ip_block_status()
                 ),
             }
+        )
+
+    def handle_router_update(
+        self,
+    ) -> None:
+        try:
+            update_repository()
+        except ConfigError as exc:
+            self.fail_json(
+                HTTPStatus.CONFLICT,
+                str(exc),
+            )
+
+            return
+
+        ok, message = start_router_update()
+
+        if not ok:
+            self.fail_json(
+                HTTPStatus.CONFLICT,
+                message or "Unable to start the router update.",
+            )
+
+            return
+
+        self.send_json(
+            {
+                "ok": True,
+                "message": message,
+            },
+            HTTPStatus.ACCEPTED,
         )
 
 

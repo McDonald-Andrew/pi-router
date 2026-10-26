@@ -1,0 +1,9 @@
+[Unit]
+Description=Download and install the latest Proton Router release
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/proton-router-update
+TimeoutStartSec=15min

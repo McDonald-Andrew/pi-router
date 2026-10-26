@@ -539,6 +539,8 @@ install_dispatcher_hardlink() {
 }
 
 phase_files() {
+    local update_config
+
     note "phase: files"
 
     load_answers
@@ -579,6 +581,11 @@ phase_files() {
         /usr/local/sbin/proton-router-ip-refresh \
         0755
 
+    install_system_source \
+        scripts/proton-router-update \
+        /usr/local/sbin/proton-router-update \
+        0755
+
     install_system_tree \
         lib/ip-block \
         /usr/local/lib/proton-router/ip-block \
@@ -611,6 +618,22 @@ phase_files() {
         config/proton-router-ip-refresh.timer \
         /etc/systemd/system/proton-router-ip-refresh.timer \
         0644
+
+    install_system_source \
+        config/proton-router-update.service \
+        /etc/systemd/system/proton-router-update.service \
+        0644
+
+    update_config="$(root_path /etc/proton-router-update.conf)"
+
+    if [[ -e "$update_config" ]]; then
+        note "preserved /etc/proton-router-update.conf"
+    else
+        install_system_source \
+            config/proton-router-update.conf \
+            /etc/proton-router-update.conf \
+            0644
+    fi
 
     install_system_source \
         config/99-router.conf \
@@ -681,6 +704,16 @@ phase_files() {
     install_system_source \
         web/styles.css \
         /usr/local/share/proton-router-web/styles.css \
+        0644
+
+    install_system_source \
+        web/favicon.svg \
+        /usr/local/share/proton-router-web/favicon.svg \
+        0644
+
+    install_system_source \
+        web/favicon.ico \
+        /usr/local/share/proton-router-web/favicon.ico \
         0644
 
     install_system_source \
@@ -4051,6 +4084,11 @@ verify_final_artifact_tree() {
         0 0 755
 
     verify_static_source_install \
+        scripts/proton-router-update \
+        /usr/local/sbin/proton-router-update \
+        0 0 755
+
+    verify_static_source_install \
         config/90-proton-router-domain-block.conf \
         /etc/dnsmasq.d/90-proton-router-domain-block.conf \
         0 0 644
@@ -4063,6 +4101,11 @@ verify_final_artifact_tree() {
     verify_static_source_install \
         config/proton-router-ip-refresh.timer \
         /etc/systemd/system/proton-router-ip-refresh.timer \
+        0 0 644
+
+    verify_static_source_install \
+        config/proton-router-update.service \
+        /etc/systemd/system/proton-router-update.service \
         0 0 644
 
     verify_static_source_install \
@@ -4136,6 +4179,16 @@ verify_final_artifact_tree() {
         0 0 644
 
     verify_static_source_install \
+        web/favicon.svg \
+        /usr/local/share/proton-router-web/favicon.svg \
+        0 0 644
+
+    verify_static_source_install \
+        web/favicon.ico \
+        /usr/local/share/proton-router-web/favicon.ico \
+        0 0 644
+
+    verify_static_source_install \
         web/server.py \
         /usr/local/share/proton-router-web/server.py \
         0 0 755
@@ -4150,6 +4203,10 @@ verify_final_artifact_tree() {
 
     verify_file_mode_owner \
         "$config" root root 644
+
+    verify_file_mode_owner \
+        "$(root_path /etc/proton-router-update.conf)" \
+        root root 644
 
     verify_file_mode_owner \
         "$lan_profile" root root 600
