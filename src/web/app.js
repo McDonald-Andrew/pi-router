@@ -43,6 +43,7 @@ function renderStatus(payload) {
   const wan = payload.wan || {};
   const lan = payload.lan || {};
 
+  $("routerVersion").textContent = payload.version || "v0.0.1";
 
   $("protonServer").textContent = proton.server || "—";
   $("protonProtocol").textContent = proton.protocol || "—";

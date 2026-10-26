@@ -10,6 +10,13 @@ SCRIPT_DIR="$(
     pwd -P
 )"
 
+ROUTER_VERSION="v0.0.1"
+SOURCE_DIR_NAME="${SCRIPT_DIR##*/}"
+
+if [[ "$SOURCE_DIR_NAME" =~ ^proton-router-(v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+    ROUTER_VERSION="${BASH_REMATCH[1]}"
+fi
+
 TARGET_ROOT=""
 PHASE=""
 ANSWERS_FILE=""
@@ -680,6 +687,14 @@ phase_files() {
         web/server.py \
         /usr/local/share/proton-router-web/server.py \
         0755
+
+    printf '%s\n' "$ROUTER_VERSION" |
+        run_root tee \
+            "$(root_path /usr/local/share/proton-router-web/version.txt)" \
+            >/dev/null
+
+    run_root chmod 0644 \
+        "$(root_path /usr/local/share/proton-router-web/version.txt)"
 
     note "phase files complete"
 }

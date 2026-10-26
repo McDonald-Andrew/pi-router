@@ -1,7 +1,7 @@
 :root {
   color: #000;
   font-family: Arial, Helvetica, sans-serif;
-background: #f4f5f6;
+  background: #f4f5f6;
   font-synthesis: none;
 }
 
@@ -23,8 +23,8 @@ button {
 /* Header */
 
 .topbar {
-  height: 64px;
-  padding: 0 28px;
+  height: auto;
+  padding: 12px 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -39,9 +39,9 @@ button {
 }
 
 .brand-icon {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
 }
 
 .brand-title {
@@ -49,7 +49,12 @@ button {
   font-weight: 600;
 }
 
-
+.brand-version {
+  margin-left: 6px;
+  color: #687078;
+  font-size: 12px;
+  font-weight: 400;
+}
 
 /* Page */
 
@@ -88,7 +93,7 @@ button {
 h1,
 h2 {
   margin: 0;
-font-size: 18px;
+  font-size: 18px;
   font-weight: 600;
 }
 
@@ -110,7 +115,7 @@ font-size: 18px;
   flex: 0 0 14px;
   border: 1px solid #6d4aff;
   border-radius: 50%;
-background: #fff;
+  background: #fff;
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9px;
   font-weight: 700;
@@ -120,11 +125,9 @@ background: #fff;
   color: #6d4aff;
 }
 
-
-
 .info-tip:hover,
 .info-tip:focus {
-background: #fff;
+  background: #fff;
   color: #6d4aff;
 }
 
@@ -154,7 +157,7 @@ background: #fff;
   padding: 9px 11px;
   border-radius: 3px;
   background: #d8dde1;
-font-size: 12px;
+  font-size: 12px;
   font-weight: 400;
   line-height: 1.45;
   text-align: left;
@@ -211,13 +214,13 @@ font-size: 12px;
   display: flex;
   align-items: center;
   gap: 6px;
-font-size: 13px;
+  font-size: 13px;
   font-weight: 500;
 }
 
 .status-list dd {
   margin: 0;
-text-align: right;
+  text-align: right;
   font-size: 13px;
   font-weight: 500;
 }
@@ -233,14 +236,13 @@ text-align: right;
   border: 1px solid #bfc7cc;
   border-radius: 3px;
   background: #fff;
-cursor: pointer;
+  cursor: pointer;
   font-size: 13px;
 }
 
 .secondary-button:hover {
   background: #f3f5f6;
 }
-
 
 /* Counts */
 
@@ -251,7 +253,7 @@ cursor: pointer;
   padding: 12px 0;
   border-top: 1px solid #eee;
   border-bottom: 1px solid #eee;
-font-size: 13px;
+  font-size: 13px;
 }
 
 .summary-row div {
@@ -261,7 +263,7 @@ font-size: 13px;
 }
 
 .summary-number {
-font-size: 18px;
+  font-size: 18px;
   font-weight: 600;
 }
 
@@ -302,7 +304,7 @@ th {
   border-top: 1px solid #d8dde1;
   border-bottom: 1px solid #ccd3d7;
   background: #f7f8f9;
-font-size: 13px;
+  font-size: 13px;
   font-weight: 600;
   text-align: left;
 }
@@ -322,13 +324,12 @@ tbody tr:last-child td {
 }
 
 .device-name {
-font-weight: 500;
+  font-weight: 500;
 }
-
 
 .mono {
   font-family: Arial, Helvetica, sans-serif;
-font-size: 13px;
+  font-size: 13px;
 }
 
 /* Route/status labels */
@@ -337,7 +338,7 @@ font-size: 13px;
   display: inline-block;
   min-width: 58px;
   padding: 3px 7px;
-border-radius: 2px;
+  border-radius: 2px;
   font-size: 13px;
   font-weight: 500;
   text-align: center;
@@ -350,13 +351,13 @@ border-radius: 2px;
  * by media-kit-derived brand assets.
  */
 .badge.proton {
-color: #fff;
+  color: #fff;
   background: transparent;
   color: #6d4aff;
 }
 
 .badge.bypass {
-color: #777;
+  color: #777;
   background: transparent;
   color: #000;
 }
@@ -367,7 +368,7 @@ color: #777;
 }
 
 .badge.offline {
-color: #777;
+  color: #777;
   background: transparent;
   color: #000;
 }
@@ -422,8 +423,6 @@ color: #777;
 }
 
 /* Footer */
-
-
 
 /* Mobile */
 

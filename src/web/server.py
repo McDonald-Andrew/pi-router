@@ -41,6 +41,7 @@ IP_REFRESH_TIMER = (
 
 DEFAULT_STATIC_ROOT = Path("/usr/local/share/proton-router-web")
 DEFAULT_PORT = 8080
+DEFAULT_VERSION = "v0.0.1"
 MAX_BODY = 4096
 
 MAC_RE = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
@@ -1150,6 +1151,16 @@ class RouterWebServer(
             static_root.resolve()
         )
 
+        try:
+            self.router_version = (
+                self.static_root
+                .joinpath("version.txt")
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+        except OSError:
+            self.router_version = DEFAULT_VERSION
+
 
 class Handler(
     BaseHTTPRequestHandler
@@ -1408,6 +1419,9 @@ class Handler(
             self.send_json(
                 {
                     "ok": True,
+                    "version": (
+                        self.server.router_version
+                    ),
                     "proton": (
                         proton_status()
                     ),
