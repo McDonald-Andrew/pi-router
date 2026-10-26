@@ -5,3 +5,4 @@ src/scripts/* text eol=lf
 src/config/*.service text eol=lf
 src/config/*.timer text eol=lf
 src/config/*.conf text eol=lf
+src/config/*.conf.example text eol=lf
