@@ -48,7 +48,6 @@ Once installation is complete you may follow the final steps for setup:
 
 4. You may turn off/unplug the router, Pi, and modem
 5. Let the modem sit for 1-2mins before plugging back in and connecting to the Pi. This allows the modem and Pi to recognize one another.
-   **The modem MUST be unplugged/reset each time the Pi is rebooted** to ensure proper functionality
 
 6. Turn on the Pi and router.
 
