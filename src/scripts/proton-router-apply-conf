@@ -506,7 +506,7 @@ generate_sudoers_conf() {
 # Edit $CANONICAL_CONFIG_FILE, not this file.
 
 Cmnd_Alias PROTONVPN_BOOTSTRAP = /usr/sbin/nft flush chain inet router_filter host_wan_bootstrap, /usr/sbin/nft add rule inet router_filter host_wan_bootstrap accept
-Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *, /usr/bin/systemctl --no-block start proton-router-vpn-refresh.service
+Cmnd_Alias PROTONROUTER_WEB = /usr/local/sbin/proton-bypass add *, /usr/local/sbin/proton-bypass remove *, /usr/bin/systemctl --no-block start proton-router-ip-refresh.service
 $ROUTER_USER ALL=(root) NOPASSWD: PROTONVPN_BOOTSTRAP, PROTONROUTER_WEB
 EOF_SUDOERS
 

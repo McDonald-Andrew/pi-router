@@ -31,7 +31,7 @@ report_progress() {
 
     if [[ -t 2 ]]; then
         printf \
-            'VPN refresh [%s%s] %3d%%  %s\n' \
+            'IP refresh [%s%s] %3d%%  %s\n' \
             "$full" \
             "$empty" \
             "$percent" \
@@ -49,7 +49,7 @@ report_progress() {
         && [[ -x /usr/bin/systemd-notify ]]
     then
         /usr/bin/systemd-notify \
-            --status="VPN_PROGRESS|${percent}|${phase}" \
+            --status="IP_PROGRESS|${percent}|${phase}" \
             >/dev/null 2>&1 \
             || true
     fi
@@ -71,7 +71,7 @@ download_url() {
         --max-time 120 \
         --retry 2 \
         --retry-delay 2 \
-        --user-agent 'proton-router-vpn-refresh/1.0' \
+        --user-agent 'proton-router-ip-refresh/1.0' \
         --output "$output" \
         "$url"
     then
@@ -376,13 +376,13 @@ restore_current_firewall() {
 
     local restore_file
 
-    echo '=== RESTORE VPN ENDPOINT BLOCK FROM CURRENT DATABASE ==='
+    echo '=== RESTORE IP BLOCK FROM CURRENT DATABASE ==='
 
     if [ ! -s "$status" ] \
         || [ ! -s "$ipv4" ] \
         || [ ! -s "$cidrs" ]
     then
-        echo 'CURRENT VPN DATABASE MISSING: FAIL'
+        echo 'CURRENT IP DATABASE MISSING: FAIL'
         return 1
     fi
 
@@ -513,13 +513,13 @@ restore_current_firewall() {
 
     if [ "$rule_count" -gt 1 ]
     then
-        echo "VPN BLOCK RULE DUPLICATE COUNT=$rule_count: FAIL"
+        echo "IP BLOCK RULE DUPLICATE COUNT=$rule_count: FAIL"
         return 1
     fi
 
     restore_file="$(
         mktemp \
-            /run/proton-router-vpn-restore.XXXXXX.nft
+            /run/proton-router-ip-restore.XXXXXX.nft
     )" || return 1
 
     {
@@ -569,16 +569,16 @@ restore_current_firewall() {
     if ! nft -c -f "$restore_file"
     then
         rm -f "$restore_file"
-        echo 'VPN RESTORE NFTABLES SYNTAX: FAIL'
+        echo 'IP RESTORE NFTABLES SYNTAX: FAIL'
         return 1
     fi
 
-    echo 'VPN RESTORE NFTABLES SYNTAX: PASS'
+    echo 'IP RESTORE NFTABLES SYNTAX: PASS'
 
     if ! nft -f "$restore_file"
     then
         rm -f "$restore_file"
-        echo 'VPN RESTORE NFTABLES APPLY: FAIL'
+        echo 'IP RESTORE NFTABLES APPLY: FAIL'
         return 1
     fi
 
@@ -609,20 +609,20 @@ restore_current_firewall() {
 
     if [ "$after_rule_count" -ne 1 ]
     then
-        echo "VPN BLOCK RULE COUNT AFTER RESTORE=$after_rule_count: FAIL"
+        echo "IP BLOCK RULE COUNT AFTER RESTORE=$after_rule_count: FAIL"
         return 1
     fi
 
-    echo 'VPN ENDPOINT SET RESTORED: PASS'
-    echo 'VPN BLOCK RULE RESTORED: PASS'
+    echo 'IP BLOCK SET RESTORED: PASS'
+    echo 'IP BLOCK RULE RESTORED: PASS'
     echo "restored-ipv4=$ip_count"
     echo "restored-cidrs=$cidr_count"
-    echo 'VPN CURRENT-DATABASE RESTORE: PASS'
+    echo 'IP CURRENT-DATABASE RESTORE: PASS'
 }
 
-BASE=/usr/local/lib/proton-router/vpn-block
+BASE=/usr/local/lib/proton-router/ip-block
 STATE_ROOT=/var/lib/proton-router
-STATE=/var/lib/proton-router/vpn-block
+STATE=/var/lib/proton-router/ip-block
 RUNROOT="$STATE/runs"
 LKG="$STATE/lkg"
 
@@ -675,11 +675,11 @@ chmod 0711 "$STATE"
 # systemd timer
 #
 
-exec 9>/run/lock/proton-router-vpn-refresh.lock
+exec 9>/run/lock/proton-router-ip-refresh.lock
 
 if ! flock -w 1800 9
 then
-    echo 'Unable to acquire VPN refresh lock'
+    echo 'Unable to acquire IP refresh lock'
     exit 75
 fi
 
@@ -712,7 +712,7 @@ then
 fi
 
 report_progress 2 "Starting refresh"
-echo '=== PROTON ROUTER VPN ENDPOINT REFRESH ==='
+echo '=== PROTON ROUTER IP BLOCKLIST REFRESH ==='
 echo "started=$(date --iso-8601=seconds)"
 
 #
@@ -1372,7 +1372,7 @@ then
         inet "$NFT_TABLE" "$NFT_SET" \
         '{ type ipv4_addr; flags interval; auto-merge; }'
 
-    echo 'Created live VPN endpoint set'
+    echo 'Created live IP block set'
 fi
 
 APPLY="$RUN/apply.nft"
@@ -1471,15 +1471,15 @@ case "$RULE_COUNT" in
             drop \
             comment "$NFT_RULE_COMMENT"
 
-        echo 'VPN BLOCK RULE INSTALLED: PASS'
+        echo 'IP BLOCK RULE INSTALLED: PASS'
         ;;
 
     1)
-        echo 'VPN BLOCK RULE ALREADY PRESENT: PASS'
+        echo 'IP BLOCK RULE ALREADY PRESENT: PASS'
         ;;
 
     *)
-        echo "VPN BLOCK RULE DUPLICATE COUNT=$RULE_COUNT: FAIL"
+        echo "IP BLOCK RULE DUPLICATE COUNT=$RULE_COUNT: FAIL"
         exit 1
         ;;
 esac
@@ -1664,4 +1664,4 @@ grep -F "$NFT_RULE_COMMENT"
 echo
 echo "completed=$(date --iso-8601=seconds)"
 report_progress 100 "Complete"
-echo 'VPN ENDPOINT REFRESH: PASS'
+echo 'IP BLOCKLIST REFRESH: PASS'

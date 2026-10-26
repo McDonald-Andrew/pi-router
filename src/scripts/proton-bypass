@@ -346,11 +346,11 @@ case "$command" in
         # Clean installs have no dynamic VPN endpoint
         # database until the first refresh succeeds.
         #
-        if [ -s /var/lib/proton-router/vpn-block/current/status ] \
-            && [ -s /var/lib/proton-router/vpn-block/current/normalized-ipv4.txt ] \
-            && [ -s /var/lib/proton-router/vpn-block/current/normalized-ipv4-cidrs.txt ]
+        if [ -s /var/lib/proton-router/ip-block/current/status ] \
+            && [ -s /var/lib/proton-router/ip-block/current/normalized-ipv4.txt ] \
+            && [ -s /var/lib/proton-router/ip-block/current/normalized-ipv4-cidrs.txt ]
         then
-            /usr/local/sbin/proton-router-vpn-refresh --restore-only
+            /usr/local/sbin/proton-router-ip-refresh --restore-only
         fi
 
         sync_all
