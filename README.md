@@ -22,9 +22,7 @@
 
 After putting the Pi5 router together, install the latest Raspberry Pi OS Desktop (x64) onto the micro SD card and insert.
 
-DO NOT POWER ON THE PI 5 YET.
-
-Ensure an Ethernet cable is connected from one of your router's LAN ports to the Waveshare PCIe device's ethernet port (`eth1`). The other ethernet cable should connect your machine to the Pi 5's built-in ethernet port (`eth0`).
+Ensure an ethernet cable is connected from your machine to the Pi 5's built-in ethernet port (`eth0`). The other ethernet cable is connected from one of your current router's LAN ports to the Waveshare PCIe device's ethernet port (`eth1`).
 
 # Installing `pi-router`
 
