@@ -1,3 +1,18 @@
+<div align="center">
+  <img src="src/web/favicon.svg" width="128" alt="Pi Router shield logo">
+  <h1>Pi Router</h1>
+  <p>The router for families who want a safer, more secure home internet without sacrificing privacy</p>
+</div>
+
+# How it Works
+
+- The Raspberry Pi 5 router applies firewall and domain policies that block listed web proxies, Tor relays, remote browsers, VPN endpoints, and others before their lookups can leave the router.
+- A local Proton VPN tunnel (account required) is used to forward DNS requests to a Cloudflare Families DNS resolver, where Cloudflare sees the VPN exit address, not the household's public IP.
+- Traffic that is permitted by the firewall and domain policies is referred to as "permitted traffic".
+- Permitted application traffic from normal devices exits through Proton VPN, while permitted application traffic from devices using the application-traffic bypass uses the ISP connection without bypassing the Pi’s DNS, domain, or firewall policies.
+- When Proton VPN is unavailable, normal devices cannot access the WAN, while bypassed devices retain WAN connectivity, but generally cannot reach new uncached domains since the Pi cannot complete upstream DNS resolution.
+- However, if Proton VPN is attempting to connect, the router creates a temporary gate that permits DNS requests through the ISP, causing Cloudflare to see the household's public IP as well as temporarily allowing new permitted domains to resolve, but this gate closes when each connection process succeeds or fails.
+
 # Required Contents
 
 - Raspberry Pi 5
