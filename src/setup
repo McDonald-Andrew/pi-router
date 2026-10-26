@@ -13,7 +13,7 @@ SCRIPT_DIR="$(
 ROUTER_VERSION="v0.0.1"
 SOURCE_DIR_NAME="${SCRIPT_DIR##*/}"
 
-if [[ "$SOURCE_DIR_NAME" =~ ^proton-router-(v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
+if [[ "$SOURCE_DIR_NAME" =~ ^pi-router-(v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)$ ]]; then
     ROUTER_VERSION="${BASH_REMATCH[1]}"
 fi
 
@@ -43,7 +43,7 @@ note() {
 
 usage() {
     cat <<'EOF'
-Raspberry Pi 5 Proton Router setup
+Raspberry Pi 5 Router setup
 
 Usage:
   ./setup --root DIR --phase PHASE [options]
@@ -52,7 +52,7 @@ Usage:
 Options:
   --root DIR
       Build into an alternate filesystem root.
-      Used for safe testing, for example /tmp/proton-router-test.
+      Used for safe testing, for example /tmp/pi-router-test.
 
   --live
       Target the real system root (/).
@@ -63,7 +63,7 @@ Options:
 
   --answers FILE
       Load setup values from a shell-style configuration file.
-      /etc/proton-router.conf can be used for staged comparison tests.
+      /etc/pi-router.conf can be used for staged comparison tests.
 
   --bypass-file FILE
       Use an existing private proton-bypass devices file.
@@ -196,7 +196,7 @@ load_answers() {
     note "loading answers from $ANSWERS_FILE"
 
     # This file is expected to use the same KEY="value" format as
-    # /etc/proton-router.conf.
+    # /etc/pi-router.conf.
     # shellcheck disable=SC1090
     source "$ANSWERS_FILE"
 
@@ -344,8 +344,8 @@ render_router_config() {
     local destination
     local temporary
 
-    template="$SCRIPT_DIR/config/proton-router.conf.example"
-    destination="$(root_path /etc/proton-router.conf)"
+    template="$SCRIPT_DIR/config/pi-router.conf.example"
+    destination="$(root_path /etc/pi-router.conf)"
     temporary="$(mktemp)"
 
     [[ -f "$template" ]] ||
@@ -573,8 +573,8 @@ phase_files() {
     # Core router executables
     #
     install_system_source \
-        scripts/proton-router-apply-conf \
-        /usr/local/sbin/proton-router-apply-conf \
+        scripts/pi-router-apply-conf \
+        /usr/local/sbin/pi-router-apply-conf \
         0755
 
     install_system_source \
@@ -588,18 +588,18 @@ phase_files() {
         0755
 
     install_system_source \
-        scripts/proton-router-ip-refresh \
-        /usr/local/sbin/proton-router-ip-refresh \
+        scripts/pi-router-ip-refresh \
+        /usr/local/sbin/pi-router-ip-refresh \
         0755
 
     install_system_source \
-        scripts/proton-router-update \
-        /usr/local/sbin/proton-router-update \
+        scripts/pi-router-update \
+        /usr/local/sbin/pi-router-update \
         0755
 
     install_system_tree \
         lib/ip-block \
-        /usr/local/lib/proton-router/ip-block \
+        /usr/local/lib/pi-router/ip-block \
         0755
 
     #
@@ -616,33 +616,33 @@ phase_files() {
         0644
 
     install_system_source \
-        config/90-proton-router-domain-block.conf \
-        /etc/dnsmasq.d/90-proton-router-domain-block.conf \
+        config/90-pi-router-domain-block.conf \
+        /etc/dnsmasq.d/90-pi-router-domain-block.conf \
         0644
 
     install_system_source \
-        config/proton-router-ip-refresh.service \
-        /etc/systemd/system/proton-router-ip-refresh.service \
+        config/pi-router-ip-refresh.service \
+        /etc/systemd/system/pi-router-ip-refresh.service \
         0644
 
     install_system_source \
-        config/proton-router-ip-refresh.timer \
-        /etc/systemd/system/proton-router-ip-refresh.timer \
+        config/pi-router-ip-refresh.timer \
+        /etc/systemd/system/pi-router-ip-refresh.timer \
         0644
 
     install_system_source \
-        config/proton-router-update.service \
-        /etc/systemd/system/proton-router-update.service \
+        config/pi-router-update.service \
+        /etc/systemd/system/pi-router-update.service \
         0644
 
-    update_config="$(root_path /etc/proton-router-update.conf)"
+    update_config="$(root_path /etc/pi-router-update.conf)"
 
     if [[ -e "$update_config" ]]; then
-        note "preserved /etc/proton-router-update.conf"
+        note "preserved /etc/pi-router-update.conf"
     else
         install_system_source \
-            config/proton-router-update.conf \
-            /etc/proton-router-update.conf \
+            config/pi-router-update.conf \
+            /etc/pi-router-update.conf \
             0644
     fi
 
@@ -690,8 +690,8 @@ phase_files() {
         0644
 
     install_user_source \
-        config/proton-router-web.service \
-        .config/systemd/user/proton-router-web.service \
+        config/pi-router-web.service \
+        .config/systemd/user/pi-router-web.service \
         0644
 
     install_user_source \
@@ -704,41 +704,41 @@ phase_files() {
     #
     install_system_source \
         web/index.html \
-        /usr/local/share/proton-router-web/index.html \
+        /usr/local/share/pi-router-web/index.html \
         0644
 
     install_system_source \
         web/app.js \
-        /usr/local/share/proton-router-web/app.js \
+        /usr/local/share/pi-router-web/app.js \
         0644
 
     install_system_source \
         web/styles.css \
-        /usr/local/share/proton-router-web/styles.css \
+        /usr/local/share/pi-router-web/styles.css \
         0644
 
     install_system_source \
         web/favicon.svg \
-        /usr/local/share/proton-router-web/favicon.svg \
+        /usr/local/share/pi-router-web/favicon.svg \
         0644
 
     install_system_source \
         web/favicon.ico \
-        /usr/local/share/proton-router-web/favicon.ico \
+        /usr/local/share/pi-router-web/favicon.ico \
         0644
 
     install_system_source \
         web/server.py \
-        /usr/local/share/proton-router-web/server.py \
+        /usr/local/share/pi-router-web/server.py \
         0755
 
     printf '%s\n' "$ROUTER_VERSION" |
         run_root tee \
-            "$(root_path /usr/local/share/proton-router-web/version.txt)" \
+            "$(root_path /usr/local/share/pi-router-web/version.txt)" \
             >/dev/null
 
     run_root chmod 0644 \
-        "$(root_path /usr/local/share/proton-router-web/version.txt)"
+        "$(root_path /usr/local/share/pi-router-web/version.txt)"
 
     note "phase files complete"
 }
@@ -1994,7 +1994,7 @@ lightdm_managed_count() {
     local key="$2"
 
     grep -Fxc \
-        "# ${key} managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf" \
+        "# ${key} managed by /etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf" \
         "$file" ||
         true
 }
@@ -2040,8 +2040,8 @@ normalize_lightdm_main() {
     local output="$2"
 
     sed -E \
-        -e 's|^[[:space:]]*autologin-user[[:space:]]*=.*$|# autologin-user managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf|' \
-        -e 's|^[[:space:]]*autologin-session[[:space:]]*=.*$|# autologin-session managed by /etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf|' \
+        -e 's|^[[:space:]]*autologin-user[[:space:]]*=.*$|# autologin-user managed by /etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf|' \
+        -e 's|^[[:space:]]*autologin-session[[:space:]]*=.*$|# autologin-session managed by /etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf|' \
         "$source" \
         > "$output"
 }
@@ -2095,7 +2095,7 @@ phase_lightdm() {
 
     managed_after="$(
         grep -Ec \
-            '^# autologin-(user|session) managed by /etc/lightdm/lightdm\.conf\.d/90-proton-router-autologin\.conf$' \
+            '^# autologin-(user|session) managed by /etc/lightdm/lightdm\.conf\.d/90-pi-router-autologin\.conf$' \
             "$temporary" ||
             true
     )"
@@ -2107,7 +2107,7 @@ phase_lightdm() {
 
     if cmp -s "$config" "$temporary"; then
         note "LightDM main configuration already normalized"
-        note "generated autologin drop-in remains owned by proton-router-apply-conf"
+        note "generated autologin drop-in remains owned by pi-router-apply-conf"
         note "phase lightdm complete"
 
         trap - EXIT
@@ -2139,7 +2139,7 @@ phase_lightdm() {
         die "LightDM main configuration still contains active autologin settings"
 
     note "neutralized $active_before LightDM autologin setting(s)"
-    note "generated autologin drop-in remains owned by proton-router-apply-conf"
+    note "generated autologin drop-in remains owned by pi-router-apply-conf"
     note "phase lightdm complete"
 
     trap - EXIT
@@ -2274,12 +2274,12 @@ phase_apply() {
 
     generator="$(
         root_path \
-            /usr/local/sbin/proton-router-apply-conf
+            /usr/local/sbin/pi-router-apply-conf
     )"
 
     config_file="$(
         root_path \
-            /etc/proton-router.conf
+            /etc/pi-router.conf
     )"
 
     [[ -f "$config_file" ]] ||
@@ -2412,12 +2412,12 @@ phase_services() {
 
     system_target="/etc/systemd/system/proton-keyring-init.service"
     autoconnect_target="$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service"
-    web_target="$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+    web_target="$ROUTER_HOME/.config/systemd/user/pi-router-web.service"
     healthcheck_timer_target="$ROUTER_HOME/.config/systemd/user/protonvpn-healthcheck.timer"
 
     system_link="/etc/systemd/system/graphical.target.wants/proton-keyring-init.service"
     autoconnect_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/protonvpn-autoconnect.service"
-    web_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service"
+    web_link="$ROUTER_HOME/.config/systemd/user/default.target.wants/pi-router-web.service"
     healthcheck_timer_link="$ROUTER_HOME/.config/systemd/user/timers.target.wants/protonvpn-healthcheck.timer"
 
     system_unit="$(root_path "$system_target")"
@@ -2677,7 +2677,7 @@ phase_proton() {
     resolve_router_home
     collect_proton_username
 
-    config_file="$(root_path /etc/proton-router.conf)"
+    config_file="$(root_path /etc/pi-router.conf)"
     autoconnect_helper="$(
         root_path \
             "$ROUTER_HOME/.local/bin/protonvpn-autoconnect"
@@ -3387,7 +3387,7 @@ phase_managed_connect() {
     validate_router_config
     resolve_router_home
 
-    config_file="$(root_path /etc/proton-router.conf)"
+    config_file="$(root_path /etc/pi-router.conf)"
 
     helper="$(
         root_path \
@@ -3448,7 +3448,7 @@ phase_managed_connect() {
 
 reboot_checkpoint_path() {
     root_path \
-        /var/lib/proton-router-setup/reboot-required.boot-id
+        /var/lib/pi-router-setup/reboot-required.boot-id
 }
 
 write_reboot_checkpoint() {
@@ -3542,7 +3542,7 @@ select_installed_router_config() {
 
     installed="$(
         root_path \
-            /etc/proton-router.conf
+            /etc/pi-router.conf
     )"
 
     [[ -f "$installed" ]] ||
@@ -3664,7 +3664,7 @@ enable_provisioning_dhcp() {
 
     path="$(
         root_path \
-            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+            /etc/dnsmasq.d/00-pi-router-provisioning.conf
     )"
 
     run_root install \
@@ -3673,7 +3673,7 @@ enable_provisioning_dhcp() {
         "$(dirname "$path")"
 
     printf '%s\n' \
-        '# Generated temporarily by proton-router setup.' \
+        '# Generated temporarily by pi-router setup.' \
         '# Give provisioning clients a LAN address only.' \
         '# Do not advertise this Pi as router or DNS until Proton is ready.' \
         "interface=${LAN_IF}" \
@@ -3703,11 +3703,11 @@ reduce_provisioning_dhcp_to_options_only() {
 
     path="$(
         root_path \
-            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+            /etc/dnsmasq.d/00-pi-router-provisioning.conf
     )"
 
     printf '%s\n' \
-        '# Generated temporarily by proton-router setup.' \
+        '# Generated temporarily by pi-router setup.' \
         '# Permanent DHCP range is now owned by generated router configuration.' \
         '# Keep gateway/DNS suppressed until Proton is ready.' \
         '# Keep a temporary upstream so the Pi itself retains DNS.' \
@@ -3726,7 +3726,7 @@ disable_provisioning_dhcp() {
 
     path="$(
         root_path \
-            /etc/dnsmasq.d/00-proton-router-provisioning.conf
+            /etc/dnsmasq.d/00-pi-router-provisioning.conf
     )"
 
     run_root rm -f "$path"
@@ -3766,7 +3766,7 @@ phase_post_reboot() (
     phase_proton
     phase_managed_connect
 
-    run_root systemctl enable --now proton-router-ip-refresh.timer
+    run_root systemctl enable --now pi-router-ip-refresh.timer
 
     # Proton is now proven working. LAN clients may finally receive this
     # router as their default gateway and DNS server.
@@ -3830,12 +3830,12 @@ verify_generated_configuration_current() (
 
     generator="$(
         root_path \
-            /usr/local/sbin/proton-router-apply-conf
+            /usr/local/sbin/pi-router-apply-conf
     )"
 
     config="$(
         root_path \
-            /etc/proton-router.conf
+            /etc/pi-router.conf
     )"
 
     [[ -x "$generator" ]] ||
@@ -3853,7 +3853,7 @@ verify_generated_configuration_current() (
         -g root \
         -m 0644 \
         "$config" \
-        "$audit_root/etc/proton-router.conf"
+        "$audit_root/etc/pi-router.conf"
 
     run_root "$generator" \
         --root "$audit_root" \
@@ -3863,7 +3863,7 @@ verify_generated_configuration_current() (
     for rel in \
         etc/nftables.d/generated-vars.nft \
         etc/dnsmasq.d/generated-vars.conf \
-        etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf \
+        etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf \
         etc/polkit-1/rules.d/49-protonvpn-networkmanager.rules \
         etc/sudoers.d/protonvpn-bootstrap \
         etc/systemd/system/proton-keyring-init.service
@@ -3882,7 +3882,7 @@ verify_generated_configuration_current() (
             die "generated file does not match router configuration: /$rel"
     done
 
-    note "generated configuration matches /etc/proton-router.conf"
+    note "generated configuration matches /etc/pi-router.conf"
 )
 
 verify_static_source_install() {
@@ -4041,7 +4041,7 @@ verify_final_artifact_tree() {
     local router_uid
     local router_gid
 
-    config="$(root_path /etc/proton-router.conf)"
+    config="$(root_path /etc/pi-router.conf)"
 
     lan_profile="$(
         root_path \
@@ -4075,8 +4075,8 @@ verify_final_artifact_tree() {
     # Exact static source -> installed artifact verification.
     #
     verify_static_source_install \
-        scripts/proton-router-apply-conf \
-        /usr/local/sbin/proton-router-apply-conf \
+        scripts/pi-router-apply-conf \
+        /usr/local/sbin/pi-router-apply-conf \
         0 0 755
 
     verify_static_source_install \
@@ -4090,33 +4090,33 @@ verify_final_artifact_tree() {
         0 0 755
 
     verify_static_source_install \
-        scripts/proton-router-ip-refresh \
-        /usr/local/sbin/proton-router-ip-refresh \
+        scripts/pi-router-ip-refresh \
+        /usr/local/sbin/pi-router-ip-refresh \
         0 0 755
 
     verify_static_source_install \
-        scripts/proton-router-update \
-        /usr/local/sbin/proton-router-update \
+        scripts/pi-router-update \
+        /usr/local/sbin/pi-router-update \
         0 0 755
 
     verify_static_source_install \
-        config/90-proton-router-domain-block.conf \
-        /etc/dnsmasq.d/90-proton-router-domain-block.conf \
+        config/90-pi-router-domain-block.conf \
+        /etc/dnsmasq.d/90-pi-router-domain-block.conf \
         0 0 644
 
     verify_static_source_install \
-        config/proton-router-ip-refresh.service \
-        /etc/systemd/system/proton-router-ip-refresh.service \
+        config/pi-router-ip-refresh.service \
+        /etc/systemd/system/pi-router-ip-refresh.service \
         0 0 644
 
     verify_static_source_install \
-        config/proton-router-ip-refresh.timer \
-        /etc/systemd/system/proton-router-ip-refresh.timer \
+        config/pi-router-ip-refresh.timer \
+        /etc/systemd/system/pi-router-ip-refresh.timer \
         0 0 644
 
     verify_static_source_install \
-        config/proton-router-update.service \
-        /etc/systemd/system/proton-router-update.service \
+        config/pi-router-update.service \
+        /etc/systemd/system/pi-router-update.service \
         0 0 644
 
     verify_static_source_install \
@@ -4165,8 +4165,8 @@ verify_final_artifact_tree() {
         "$router_uid" "$router_gid" 664
 
     verify_static_source_install \
-        config/proton-router-web.service \
-        "$ROUTER_HOME/.config/systemd/user/proton-router-web.service" \
+        config/pi-router-web.service \
+        "$ROUTER_HOME/.config/systemd/user/pi-router-web.service" \
         "$router_uid" "$router_gid" 644
 
     verify_static_source_install \
@@ -4176,32 +4176,32 @@ verify_final_artifact_tree() {
 
     verify_static_source_install \
         web/index.html \
-        /usr/local/share/proton-router-web/index.html \
+        /usr/local/share/pi-router-web/index.html \
         0 0 644
 
     verify_static_source_install \
         web/app.js \
-        /usr/local/share/proton-router-web/app.js \
+        /usr/local/share/pi-router-web/app.js \
         0 0 644
 
     verify_static_source_install \
         web/styles.css \
-        /usr/local/share/proton-router-web/styles.css \
+        /usr/local/share/pi-router-web/styles.css \
         0 0 644
 
     verify_static_source_install \
         web/favicon.svg \
-        /usr/local/share/proton-router-web/favicon.svg \
+        /usr/local/share/pi-router-web/favicon.svg \
         0 0 644
 
     verify_static_source_install \
         web/favicon.ico \
-        /usr/local/share/proton-router-web/favicon.ico \
+        /usr/local/share/pi-router-web/favicon.ico \
         0 0 644
 
     verify_static_source_install \
         web/server.py \
-        /usr/local/share/proton-router-web/server.py \
+        /usr/local/share/pi-router-web/server.py \
         0 0 755
 
     note "static installed artifacts match repository sources"
@@ -4216,7 +4216,7 @@ verify_final_artifact_tree() {
         "$config" root root 644
 
     verify_file_mode_owner \
-        "$(root_path /etc/proton-router-update.conf)" \
+        "$(root_path /etc/pi-router-update.conf)" \
         root root 644
 
     verify_file_mode_owner \
@@ -4262,8 +4262,8 @@ verify_final_artifact_tree() {
         "$ROUTER_HOME/.config/systemd/user/protonvpn-autoconnect.service"
 
     verify_exact_symlink \
-        "$(root_path "$ROUTER_HOME/.config/systemd/user/default.target.wants/proton-router-web.service")" \
-        "$ROUTER_HOME/.config/systemd/user/proton-router-web.service"
+        "$(root_path "$ROUTER_HOME/.config/systemd/user/default.target.wants/pi-router-web.service")" \
+        "$ROUTER_HOME/.config/systemd/user/pi-router-web.service"
 
     verify_exact_symlink \
         "$(root_path "$ROUTER_HOME/.config/systemd/user/timers.target.wants/protonvpn-healthcheck.timer")" \
@@ -4376,7 +4376,7 @@ verify_final_runtime() {
         dnsmasq.service \
         lightdm.service \
         proton-keyring-init.service \
-        proton-router-ip-refresh.timer
+        pi-router-ip-refresh.timer
     do
         state="$(
             systemctl is-enabled "$unit" \
@@ -4402,7 +4402,7 @@ verify_final_runtime() {
         nftables.service \
         dnsmasq.service \
         lightdm.service \
-        proton-router-ip-refresh.timer
+        pi-router-ip-refresh.timer
     do
         state="$(
             systemctl is-active "$unit" \
@@ -4488,26 +4488,26 @@ verify_final_runtime() {
             /usr/bin/systemctl \
             --user \
             is-enabled \
-            proton-router-web.service \
+            pi-router-web.service \
             2>/dev/null ||
         true
     )"
 
     [[ "$state" == "enabled" ]] ||
-        die "proton-router-web.service is not enabled: $state"
+        die "pi-router-web.service is not enabled: $state"
 
     state="$(
         run_router_user_bus \
             /usr/bin/systemctl \
             --user \
             is-active \
-            proton-router-web.service \
+            pi-router-web.service \
             2>/dev/null ||
         true
     )"
 
     [[ "$state" == "active" ]] ||
-        die "proton-router-web.service is not active: $state"
+        die "pi-router-web.service is not active: $state"
 
     #
     # Network roles.
@@ -4787,7 +4787,7 @@ phase_final_verify() {
 
     installed_config="$(
         root_path \
-            /etc/proton-router.conf
+            /etc/pi-router.conf
     )"
 
     [[ -f "$installed_config" ]] ||

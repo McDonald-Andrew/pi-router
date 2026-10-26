@@ -1,0 +1,9 @@
+[Unit]
+Description=Download and install the latest Pi Router release
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pi-router-update
+TimeoutStartSec=15min

@@ -1,11 +1,11 @@
 [Unit]
-Description=Proton Router web interface
+Description=Pi Router web interface
 Wants=gnome-keyring-daemon.service
 After=gnome-keyring-daemon.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/share/proton-router-web/server.py
+ExecStart=/usr/bin/python3 /usr/local/share/pi-router-web/server.py
 Restart=on-failure
 RestartSec=5
 

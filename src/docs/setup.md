@@ -71,8 +71,8 @@ For parity with the automated installer, use the release archive rather than man
 Place these two files in the router user's home directory:
 
 ```text
-~/proton-router-vX.Y.Z.tar.gz      # Replace with the release version, for example 0.1.0
-~/proton-router-vX.Y.Z.sha256.txt  # Replace with the release version, for example 0.1.0
+~/pi-router-vX.Y.Z.tar.gz      # Replace with the release version, for example 0.1.0
+~/pi-router-vX.Y.Z.sha256.txt  # Replace with the release version, for example 0.1.0
 ```
 
 Verify that the archive hash matches the hash recorded in the sidecar:
@@ -80,7 +80,7 @@ Verify that the archive hash matches the hash recorded in the sidecar:
 ```bash
 cd ~
 
-release="proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
+release="pi-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 archive_sha="$(sha256sum "$release.tar.gz" | awk '{print $1}')"
 sidecar_sha="$(grep -Eio '[0-9a-f]{64}' "$release.sha256.txt" | head -n 1 | tr '[:lower:]' '[:upper:]')"
 archive_sha_upper="$(printf '%s' "$archive_sha" | tr '[:lower:]' '[:upper:]')"
@@ -98,7 +98,7 @@ Extract a clean copy:
 
 ```bash
 cd ~
-release="proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
+release="pi-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 rm -rf "$HOME/$release"
 
 tar -xzf "$HOME/$release.tar.gz"
@@ -108,7 +108,7 @@ chmod +x "$HOME/$release/setup"
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-vX.Y.Z # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z # Replace with the release version, for example 0.1.0
 ```
 
 Verify the setup entry point:
@@ -127,7 +127,7 @@ setup entry point OK
 All remaining relative paths in this guide assume the release exists at:
 
 ```text
-~/proton-router-vX.Y.Z
+~/pi-router-vX.Y.Z
 ```
 
 ---
@@ -185,7 +185,7 @@ ssh <ROUTER_USER>@<PI_WIFI_HOST>
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run the same pre-reboot phase used by the automated installer:
@@ -282,14 +282,14 @@ Do not continue until LAN SSH works.
 After reconnecting to the Pi at `192.168.50.1`, enter the release directory:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Remove any checkpoint left by an earlier incomplete installation attempt:
 
 ```bash
 sudo rm -f \
-    /var/lib/proton-router-setup/reboot-required.boot-id
+    /var/lib/pi-router-setup/reboot-required.boot-id
 ```
 
 Run the same LAN resume phase used by the automated installer:
@@ -324,7 +324,7 @@ Then verify the same reboot checkpoint that the automated installer trusts after
 ```bash
 test "$(
     sudo cat \
-        /var/lib/proton-router-setup/reboot-required.boot-id \
+        /var/lib/pi-router-setup/reboot-required.boot-id \
         2>/dev/null
 )" = "$(
     cat /proc/sys/kernel/random/boot_id
@@ -378,7 +378,7 @@ Do not manually connect Proton at this point.
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run the same post-reboot phase used by the automated installer:
@@ -440,7 +440,7 @@ ssh <ROUTER_USER>@192.168.50.1
 Enter the release directory again:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Re-run the same post-reboot phase:
@@ -568,7 +568,7 @@ protonvpn status 2>/dev/null |
 Enter the release directory:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 ```
 
 Run exactly the same final verification phase used by the automated installer:
@@ -638,7 +638,7 @@ Do not replace the phase-based installation procedure with individually copied p
 The canonical installation success gate is:
 
 ```bash
-cd ~/proton-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z  # Replace with the release version, for example 0.1.0
 
 ./setup \
     --live \
@@ -658,7 +658,7 @@ The checks below are additional diagnostics and inspection commands. They do not
 Verify that the deferred IP blocklist refresh timer is installed and enabled:
 
 ```bash
-systemctl is-enabled proton-router-ip-refresh.timer
+systemctl is-enabled pi-router-ip-refresh.timer
 ```
 
 Expected:
@@ -682,7 +682,7 @@ sudo grep -RniE \
 The only active values should come from:
 
 ```text
-/etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf
+/etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf
 ```
 
 Check sudoers:
@@ -858,9 +858,9 @@ A fresh build is considered successful when all of the following are true:
 - bypass routing contains a blackhole default whenever usable WAN routing is unavailable.
 - configured bypass devices use the current dynamic ISP gateway.
 - non-WAN NetworkManager dispatcher events exit successfully.
-- LightDM autologin values are generated from `/etc/proton-router.conf`.
+- LightDM autologin values are generated from `/etc/pi-router.conf`.
 - polkit, sudoers, dnsmasq variables, nftables variables, and the keyring service are generated rather than hand-edited.
-- `proton-router-web.service` is enabled and active after unattended login.
+- `pi-router-web.service` is enabled and active after unattended login.
 - `http://<LAN_ADDR>:8080/` loads from a LAN client without additional packages or a separate web server.
 - `/api/status` reports Proton and WAN state.
 - `/api/clients` reports known LAN clients and current bypass state.
@@ -868,7 +868,7 @@ A fresh build is considered successful when all of the following are true:
 - the web service is unreachable from the WAN.
 - the generated sudoers policy grants the router user only the Proton bootstrap commands and the two required `proton-bypass` mutation forms.
 - no credentials, private keys, real keyring files, or real bypass-device identities are present in the Git repository.
-- `proton-router-ip-refresh.timer` is installed and enabled.
+- `pi-router-ip-refresh.timer` is installed and enabled.
 - installation does not require an initial dynamic IP blocklist database build to complete successfully.
 - the dynamic IP blocklist database can be built later by the scheduled timer or by an explicit manual/web refresh.
 
@@ -899,16 +899,16 @@ Also do not copy machine-generated files from an existing router:
 ```text
 /etc/nftables.d/generated-vars.nft
 /etc/dnsmasq.d/generated-vars.conf
-/etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf
+/etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf
 /etc/polkit-1/rules.d/49-protonvpn-networkmanager.rules
 /etc/sudoers.d/protonvpn-bootstrap
 /etc/systemd/system/proton-keyring-init.service
 ```
 
-Those files are recreated by `proton-router-apply-conf`, which the canonical `setup` phases invoke as part of installation. For manual recovery or diagnostics, the underlying command is:
+Those files are recreated by `pi-router-apply-conf`, which the canonical `setup` phases invoke as part of installation. For manual recovery or diagnostics, the underlying command is:
 
 ```bash
-sudo proton-router-apply-conf
+sudo pi-router-apply-conf
 ```
 
 Do not substitute that one command for the phase-based installation procedure.
@@ -916,7 +916,7 @@ Do not substitute that one command for the phase-based installation procedure.
 This distinction is central to the reproducibility model:
 
 - Git stores source configuration and logic.
-- `proton-router-apply-conf` generates machine-specific system configuration.
+- `pi-router-apply-conf` generates machine-specific system configuration.
 - Proton and GNOME Keyring maintain authentication/session secrets locally.
 - dnsmasq and NetworkManager maintain runtime client/network state locally.
 - the web UI reads runtime state but does not become a second configuration database.

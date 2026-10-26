@@ -22,16 +22,16 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
-CONFIG_FILE = Path("/etc/proton-router.conf")
+CONFIG_FILE = Path("/etc/pi-router.conf")
 BYPASS_FILE = Path("/etc/proton-bypass/devices.conf")
 PROTON_BYPASS = "/usr/local/sbin/proton-bypass"
 IP_CMD = "/usr/sbin/ip"
 SUDO_CMD = "/usr/bin/sudo"
 SYSTEMCTL_CMD = "/usr/bin/systemctl"
 UPDATE_CONFIG_FILE = Path(
-    "/etc/proton-router-update.conf"
+    "/etc/pi-router-update.conf"
 )
-UPDATE_SERVICE = "proton-router-update.service"
+UPDATE_SERVICE = "pi-router-update.service"
 UPDATE_REPOSITORY_PLACEHOLDER = (
     "https://github.com/OWNER/REPOSITORY"
 )
@@ -39,18 +39,18 @@ GITHUB_API_VERSION = "2022-11-28"
 MAX_RELEASE_RESPONSE = 1024 * 1024
 
 IP_BLOCK_STATUS_FILE = Path(
-    "/var/lib/proton-router/ip-block/current/status"
+    "/var/lib/pi-router/ip-block/current/status"
 )
 
 IP_REFRESH_SERVICE = (
-    "proton-router-ip-refresh.service"
+    "pi-router-ip-refresh.service"
 )
 
 IP_REFRESH_TIMER = (
-    "proton-router-ip-refresh.timer"
+    "pi-router-ip-refresh.timer"
 )
 
-DEFAULT_STATIC_ROOT = Path("/usr/local/share/proton-router-web")
+DEFAULT_STATIC_ROOT = Path("/usr/local/share/pi-router-web")
 DEFAULT_PORT = 8080
 DEFAULT_VERSION = "v0.0.1"
 MAX_BODY = 4096
@@ -201,7 +201,7 @@ def latest_release(
         f"{repository}/releases/latest",
         headers={
             "Accept": "application/vnd.github+json",
-            "User-Agent": "proton-router-updater",
+            "User-Agent": "pi-router-updater",
             "X-GitHub-Api-Version": GITHUB_API_VERSION,
         },
     )
@@ -263,8 +263,8 @@ def latest_release(
         tag if tag.startswith("v") else f"v{tag}"
     )
     required_assets = {
-        f"proton-router-{normalized_tag}.tar.gz",
-        f"proton-router-{normalized_tag}.sha256.txt",
+        f"pi-router-{normalized_tag}.tar.gz",
+        f"pi-router-{normalized_tag}.sha256.txt",
     }
     available_assets = {
         str(item.get("name", ""))
@@ -1457,7 +1457,7 @@ class Handler(
     BaseHTTPRequestHandler
 ):
     server_version = (
-        "ProtonRouterWeb/1.0"
+        "PiRouterWeb/1.0"
     )
 
     def log_message(
@@ -2179,7 +2179,7 @@ def main() -> int:
         )
     except ConfigError as exc:
         print(
-            f"proton-router-web: {exc}",
+            f"pi-router-web: {exc}",
             file=sys.stderr,
         )
 
@@ -2189,7 +2189,7 @@ def main() -> int:
         1 <= args.port <= 65535
     ):
         print(
-            "proton-router-web: "
+            "pi-router-web: "
             "invalid port",
             file=sys.stderr,
         )
@@ -2198,7 +2198,7 @@ def main() -> int:
 
     if not args.static_root.is_dir():
         print(
-            "proton-router-web: "
+            "pi-router-web: "
             "static directory not found: "
             f"{args.static_root}",
             file=sys.stderr,
@@ -2216,7 +2216,7 @@ def main() -> int:
     )
 
     print(
-        "proton-router-web: serving "
+        "pi-router-web: serving "
         f"http://{args.bind}:"
         f"{args.port}/ "
         "for LAN "

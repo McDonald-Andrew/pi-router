@@ -5,7 +5,7 @@ set -eu
 # Permanently assigns selected LAN devices to the raw WAN instead of Proton.
 # DNS/firewall enforcement remains handled by the Pi.
 
-CONFIG_FILE="/etc/proton-router.conf"
+CONFIG_FILE="/etc/pi-router.conf"
 
 STATE_DIR="/etc/proton-bypass"
 DEVICES_FILE="$STATE_DIR/devices.conf"
@@ -346,11 +346,11 @@ case "$command" in
         # Clean installs have no dynamic VPN endpoint
         # database until the first refresh succeeds.
         #
-        if [ -s /var/lib/proton-router/ip-block/current/status ] \
-            && [ -s /var/lib/proton-router/ip-block/current/normalized-ipv4.txt ] \
-            && [ -s /var/lib/proton-router/ip-block/current/normalized-ipv4-cidrs.txt ]
+        if [ -s /var/lib/pi-router/ip-block/current/status ] \
+            && [ -s /var/lib/pi-router/ip-block/current/normalized-ipv4.txt ] \
+            && [ -s /var/lib/pi-router/ip-block/current/normalized-ipv4-cidrs.txt ]
         then
-            /usr/local/sbin/proton-router-ip-refresh --restore-only
+            /usr/local/sbin/pi-router-ip-refresh --restore-only
         fi
 
         sync_all

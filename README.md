@@ -26,11 +26,11 @@ DO NOT POWER ON THE PI 5 YET.
 
 Ensure an Ethernet cable is connected from one of your router's LAN ports to the Waveshare PCIe device's ethernet port (`eth1`). The other ethernet cable should connect your machine to the Pi 5's built-in ethernet port (`eth0`).
 
-# Installing `proton-router`
+# Installing `pi-router`
 
 - If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
 - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
-- To build `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `proton-router-vX.Y.Z.tar.gz`](#pack--repack-proton-router-vxyz-targz) below.
+- To build `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `pi-router-vX.Y.Z.tar.gz`](#pack--repack-pi-router-vxyz-targz) below.
 
 - To build a Windows installer, follow [windows-installer/BUILD.md](windows-installer/BUILD.md).
   - The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, retry the installation. If this still does not work, **re-image the Pi 5 with a fresh Raspberry Pi OS Desktop image** and start again.
@@ -54,15 +54,15 @@ Once installation is complete you may follow the final steps for setup:
 
 6. Turn on the Pi and router.
 
-Congratulations! Your Proton Router is finished!
+Congratulations! Your Pi Router is finished!
 
-# Pack / Repack `proton-router-vX.Y.Z.tar.gz`
+# Pack / Repack `pi-router-vX.Y.Z.tar.gz`
 
 Create a new archive:
 
 ```powershell
-$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
-$release = "proton-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\pi-router"
+$release = "pi-router-vX.Y.Z" # Replace with the release version, for example 0.1.0
 $releaseDir = "$parent\$release"
 $out = "$parent\$release.tar.gz"
 
@@ -97,11 +97,11 @@ if ($expected -eq $actual) {
 }
 ```
 
-# Unpack `proton-router-vX.Y.Z.tar.gz`
+# Unpack `pi-router-vX.Y.Z.tar.gz`
 
 ```powershell
-$tarFile="proton-router-vX.Y.Z.tar.gz"  # Replace with the release version, for example 0.1.0
-$parent = "$env:USERPROFILE\Desktop\GitHubRepos\proton-router"
+$tarFile="pi-router-vX.Y.Z.tar.gz"  # Replace with the release version, for example 0.1.0
+$parent = "$env:USERPROFILE\Desktop\GitHubRepos\pi-router"
 $in = "$parent\$tarFile"
 
 New-Item -ItemType Directory -Force $parent | Out-Null

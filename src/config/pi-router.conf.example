@@ -1,4 +1,4 @@
-# Raspberry Pi Proton Router configuration
+# Raspberry Pi Router configuration
 
 # Router administration account
 ROUTER_USER="admin"

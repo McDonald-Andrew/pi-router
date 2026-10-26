@@ -6,8 +6,8 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>proton-router-installer</AssemblyName>
-    <RootNamespace>ProtonRouterInstaller</RootNamespace>
+    <AssemblyName>pi-router-installer</AssemblyName>
+    <RootNamespace>PiRouterInstaller</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DebugType>none</DebugType>
   </PropertyGroup>

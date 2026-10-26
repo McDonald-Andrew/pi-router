@@ -33,4 +33,4 @@ jobs:
 
       - name: Compile Windows Installer EXE for Release
         shell: powershell
-        run: dotnet build .\ProtonRouterInstaller.csproj -c Release
+        run: dotnet build .\PiRouterInstaller.csproj -c Release

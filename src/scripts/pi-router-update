@@ -3,9 +3,9 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-CONFIG_FILE="/etc/proton-router-update.conf"
-VERSION_FILE="/usr/local/share/proton-router-web/version.txt"
-STATUS_FILE="/var/lib/proton-router/update/status"
+CONFIG_FILE="/etc/pi-router-update.conf"
+VERSION_FILE="/usr/local/share/pi-router-web/version.txt"
+STATUS_FILE="/var/lib/pi-router/update/status"
 PLACEHOLDER_REPOSITORY_URL="https://github.com/OWNER/REPOSITORY"
 GITHUB_API_VERSION="2022-11-28"
 
@@ -45,14 +45,14 @@ cleanup() {
 
         write_status \
             failed \
-            "Update failed. Check journalctl -u proton-router-update.service."
+            "Update failed. Check journalctl -u pi-router-update.service."
     fi
 }
 
 trap cleanup EXIT
 
 die() {
-    printf 'proton-router-update: %s\n' "$*" >&2
+    printf 'pi-router-update: %s\n' "$*" >&2
     exit 1
 }
 
@@ -95,7 +95,7 @@ command -v tar >/dev/null 2>&1 ||
 
 CURRENT_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
 ORIGINAL_VERSION="$CURRENT_VERSION"
-WORK_DIR="$(mktemp -d /tmp/proton-router-update.XXXXXX)"
+WORK_DIR="$(mktemp -d /tmp/pi-router-update.XXXXXX)"
 RELEASE_JSON="$WORK_DIR/release.json"
 RELEASE_METADATA="$WORK_DIR/release-metadata"
 
@@ -112,7 +112,7 @@ curl \
     --max-time 30 \
     --header 'Accept: application/vnd.github+json' \
     --header "X-GitHub-Api-Version: $GITHUB_API_VERSION" \
-    --user-agent 'proton-router-updater' \
+    --user-agent 'pi-router-updater' \
     --output "$RELEASE_JSON" \
     "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest"
 
@@ -178,8 +178,8 @@ if not newer(tag, sys.argv[2]):
     print(normalized_tag)
     raise SystemExit(0)
 
-archive_name = f"proton-router-{normalized_tag}.tar.gz"
-checksum_name = f"proton-router-{normalized_tag}.sha256.txt"
+archive_name = f"pi-router-{normalized_tag}.tar.gz"
+checksum_name = f"pi-router-{normalized_tag}.sha256.txt"
 assets = {
     str(asset.get("name", "")): str(asset.get("browser_download_url", ""))
     for asset in payload.get("assets", [])
@@ -214,8 +214,8 @@ fi
 (( ${#RELEASE_FIELDS[@]} == 4 )) ||
     die "latest release is missing required assets"
 
-ARCHIVE_NAME="proton-router-$LATEST_VERSION.tar.gz"
-CHECKSUM_NAME="proton-router-$LATEST_VERSION.sha256.txt"
+ARCHIVE_NAME="pi-router-$LATEST_VERSION.tar.gz"
+CHECKSUM_NAME="pi-router-$LATEST_VERSION.sha256.txt"
 ARCHIVE_PATH="$WORK_DIR/$ARCHIVE_NAME"
 CHECKSUM_PATH="$WORK_DIR/$CHECKSUM_NAME"
 
@@ -262,7 +262,7 @@ import tarfile
 from pathlib import PurePosixPath
 
 archive, version = sys.argv[1:]
-root = f"proton-router-{version}"
+root = f"pi-router-{version}"
 
 with tarfile.open(archive, "r:gz") as bundle:
     members = bundle.getmembers()
@@ -286,7 +286,7 @@ tar \
     --no-same-owner \
     --no-same-permissions
 
-RELEASE_DIR="$WORK_DIR/proton-router-$LATEST_VERSION"
+RELEASE_DIR="$WORK_DIR/pi-router-$LATEST_VERSION"
 
 [[ -f "$RELEASE_DIR/setup" ]] ||
     die "release does not contain setup"
@@ -298,11 +298,11 @@ write_status installing "Installing $LATEST_VERSION."
 "$RELEASE_DIR/setup" \
     --live \
     --phase files \
-    --answers /etc/proton-router.conf \
+    --answers /etc/pi-router.conf \
     --non-interactive \
     --allow-live-install
 
-/usr/local/sbin/proton-router-apply-conf
+/usr/local/sbin/pi-router-apply-conf
 
 write_status rebooting "Installed $LATEST_VERSION; rebooting."
 

@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 using Renci.SshNet;
 using Renci.SshNet.Common;
 
-namespace ProtonRouterInstaller;
+namespace PiRouterInstaller;
 
 internal static class Program
 {
@@ -30,7 +30,7 @@ internal sealed record ProcessResult(int ExitCode, string Output);
 
 internal sealed class InstallerForm : Form
 {
-    private const string ArchiveNamePattern = @"^proton-router-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\.tar\.gz$";
+    private const string ArchiveNamePattern = @"^pi-router-v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\.tar\.gz$";
     private static readonly string CertifiedArchiveSha256 = typeof(Program).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().First(attribute => attribute.Key == "CertifiedArchiveSha256").Value!;
     private const string LanHost = "192.168.50.1";
     private const string LanPrefix = "192.168.50.";
@@ -60,7 +60,7 @@ internal sealed class InstallerForm : Form
 
     public InstallerForm()
     {
-        Text = "Proton Router Installer";
+        Text = "Pi Router Installer";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         Width = 400;
         Height = 680;
@@ -238,7 +238,7 @@ internal sealed class InstallerForm : Form
             AppendLog("\r\n=== SUCCESS ===\r\nArchive install and unattended final verification passed.\r\n");
             MessageBox.Show(this,
                 "Proton router installation and final verification passed.",
-                "Proton Router Installer",
+                "Pi Router Installer",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
         }
@@ -293,12 +293,12 @@ internal sealed class InstallerForm : Form
     {
         string baseDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "ProtonRouterInstaller");
+            "PiRouterInstaller");
         string logDir = Path.Combine(baseDir, "logs");
         Directory.CreateDirectory(logDir);
         logPath = Path.Combine(logDir, "install-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
         logWriter = new StreamWriter(logPath, false, new UTF8Encoding(false)) { AutoFlush = true };
-        AppendLog("Proton Router Installer\r\n");
+        AppendLog("Pi Router Installer\r\n");
         AppendLog("Started: " + DateTime.Now.ToString("O") + "\r\n");
         AppendLog("Log: " + logPath + "\r\n\r\n");
     }
@@ -315,7 +315,7 @@ internal sealed class InstallerForm : Form
 
         SetProgress(4, "Verifying certified release");
         if (!Regex.Match(archiveName, ArchiveNamePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Success)
-            throw new InvalidOperationException("This installer accepts only archives that match proton-router-vX.Y.Z.tar.gz.");
+            throw new InvalidOperationException("This installer accepts only archives that match pi-router-vX.Y.Z.tar.gz.");
 
         string localSha = await Task.Run(() => ComputeSha256(archive), token);
         if (!string.Equals(localSha, CertifiedArchiveSha256, StringComparison.OrdinalIgnoreCase))
@@ -375,7 +375,7 @@ internal sealed class InstallerForm : Form
                             " --allow-network-cutover --allow-wifi-disable --non-interactive";
 
         string preResumeCommand =
-            "sudo rm -f /var/lib/proton-router-setup/reboot-required.boot-id" +
+            "sudo rm -f /var/lib/pi-router-setup/reboot-required.boot-id" +
             " && cd " + remoteExportDir +
             " && ./setup --live --allow-live-install --phase pre-reboot-resume" +
             " --allow-network-cutover --allow-wifi-disable --non-interactive";
@@ -446,7 +446,7 @@ internal sealed class InstallerForm : Form
                 RemoteResult checkpoint = await RunRemoteAsync(
                     LanHost,
                     "test \"$(sudo cat " +
-                    "/var/lib/proton-router-setup/reboot-required.boot-id " +
+                    "/var/lib/pi-router-setup/reboot-required.boot-id " +
                     "2>/dev/null)\" = " +
                     "\"$(cat /proc/sys/kernel/random/boot_id)\" " +
                     "&& printf 'PRE_REBOOT_CHECKPOINT_OK\\n'",

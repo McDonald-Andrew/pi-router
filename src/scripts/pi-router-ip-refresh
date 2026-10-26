@@ -71,7 +71,7 @@ download_url() {
         --max-time 120 \
         --retry 2 \
         --retry-delay 2 \
-        --user-agent 'proton-router-ip-refresh/1.0' \
+        --user-agent 'pi-router-ip-refresh/1.0' \
         --output "$output" \
         "$url"
     then
@@ -519,7 +519,7 @@ restore_current_firewall() {
 
     restore_file="$(
         mktemp \
-            /run/proton-router-ip-restore.XXXXXX.nft
+            /run/pi-router-ip-restore.XXXXXX.nft
     )" || return 1
 
     {
@@ -620,9 +620,9 @@ restore_current_firewall() {
     echo 'IP CURRENT-DATABASE RESTORE: PASS'
 }
 
-BASE=/usr/local/lib/proton-router/ip-block
-STATE_ROOT=/var/lib/proton-router
-STATE=/var/lib/proton-router/ip-block
+BASE=/usr/local/lib/pi-router/ip-block
+STATE_ROOT=/var/lib/pi-router
+STATE=/var/lib/pi-router/ip-block
 RUNROOT="$STATE/runs"
 LKG="$STATE/lkg"
 
@@ -655,7 +655,7 @@ TOR_URL='https://onionoo.torproject.org/details?type=relay&running=true&fields=f
 
 NFT_TABLE=router_filter
 NFT_SET=blocked_ip_endpoints_v4
-NFT_RULE_COMMENT=PROTON_ROUTER_IP_ENDPOINT_BLOCK_V1
+NFT_RULE_COMMENT=PI_ROUTER_IP_ENDPOINT_BLOCK_V1
 
 mkdir -p "$RUNROOT" "$LKG"
 
@@ -675,7 +675,7 @@ chmod 0711 "$STATE"
 # systemd timer
 #
 
-exec 9>/run/lock/proton-router-ip-refresh.lock
+exec 9>/run/lock/pi-router-ip-refresh.lock
 
 if ! flock -w 1800 9
 then
@@ -712,7 +712,7 @@ then
 fi
 
 report_progress 2 "Starting refresh"
-echo '=== PROTON ROUTER IP BLOCKLIST REFRESH ==='
+echo '=== PI ROUTER IP BLOCKLIST REFRESH ==='
 echo "started=$(date --iso-8601=seconds)"
 
 #
@@ -1241,7 +1241,7 @@ if /usr/bin/curl \
     --max-time 180 \
     --retry 2 \
     --retry-delay 2 \
-    --user-agent 'proton-router-tor-adapter/1.0' \
+    --user-agent 'pi-router-tor-adapter/1.0' \
     --output "$TOR_SOURCE" \
     "$TOR_URL"
 then

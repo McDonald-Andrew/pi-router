@@ -1,4 +1,4 @@
-name: Proton Router Release
+name: Pi Router Release
 
 on:
   workflow_dispatch:
@@ -35,7 +35,7 @@ jobs:
               throw 'Version must match X.Y.Z or X.Y.Z-prerelease, where X.Y.Z is replaced with the release version, for example 0.1.0.'
           }
 
-          $releaseName = "proton-router-v$env:VERSION"
+          $releaseName = "pi-router-v$env:VERSION"
           $tmpDir = Join-Path $env:GITHUB_WORKSPACE 'dist'
           $stagingDir = Join-Path $tmpDir $releaseName
           $archiveDir = Join-Path $tmpDir "$releaseName.tar.gz"
@@ -61,13 +61,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
         run: |
-          $releaseName = "proton-router-v$env:VERSION"
+          $releaseName = "pi-router-v$env:VERSION"
 
           gh release create "v$env:VERSION" `
             ".\dist\$releaseName.tar.gz" `
             ".\dist\$releaseName.sha256.txt" `
-            .\windows-installer\publish\proton-router-installer.exe `
-            .\windows-installer\publish\proton-router-installer.sha256.txt `
+            .\windows-installer\publish\pi-router-installer.exe `
+            .\windows-installer\publish\pi-router-installer.sha256.txt `
             .\windows-installer\publish\THIRD-PARTY-NOTICES.txt `
             --target "${{ github.sha }}" `
             --generate-notes

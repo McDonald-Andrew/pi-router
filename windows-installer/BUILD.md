@@ -1,4 +1,4 @@
-# PROTON ROUTER INSTALLER
+# PI ROUTER INSTALLER
 
 ## Purpose
 
@@ -17,7 +17,7 @@ dotnet watch
 
 ### Build Locally
 
-Place the `proton-router-vX.Y.Z.tar.gz` archive in the repository root before running the build script.
+Place the `pi-router-vX.Y.Z.tar.gz` archive in the repository root before running the build script.
 
 Install the .NET 8 SDK, then run:
 
@@ -27,19 +27,19 @@ powershell -ExecutionPolicy Bypass -File .\windows-installer\build.ps1
 
 The publish folder will contain files including:
 
-    proton-router-installer.exe
-    proton-router-installer.sha256.txt
+    pi-router-installer.exe
+    pi-router-installer.sha256.txt
     THIRD-PARTY-NOTICES.txt
 
-GitHub Actions `Proton Router Release` workflow packages `src/`, creates the archive, builds the matching win-x64 installer, and uploads all release files.
+GitHub Actions `Pi Router Release` workflow packages `src/`, creates the archive, builds the matching win-x64 installer, and uploads all release files.
 
 ## Release Folder Used by the Installer
 
 Place these files together:
 
-    proton-router-installer.exe
-    proton-router-v*.*.*.tar.gz
-    proton-router-v*.*.*.sha256.txt
+    pi-router-installer.exe
+    pi-router-v*.*.*.tar.gz
+    pi-router-v*.*.*.sha256.txt
 
 Then run the installer within that folder.
 

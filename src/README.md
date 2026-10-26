@@ -1,4 +1,4 @@
-# Raspberry Pi 5 Proton Router
+# Raspberry Pi 5 Router
 
 A Raspberry Pi 5 configured as a fail-closed home router for Proton VPN, with per-device raw-WAN bypass, enforced DNS policy, dynamic VPN/proxy/Tor endpoint blocking, and a local web management interface.
 
@@ -69,7 +69,7 @@ LAN device:   eth0
 WAN device:   eth1
 ```
 
-These values are configurable in `config/proton-router.conf.example` and are installed as `/etc/proton-router.conf`.
+These values are configurable in `config/pi-router.conf.example` and are installed as `/etc/pi-router.conf`.
 
 ## Core routing behavior
 
@@ -114,7 +114,7 @@ The firewall also blocks common DNS-bypass paths including:
 Static named-domain policy is installed from:
 
 ```text
-/etc/dnsmasq.d/90-proton-router-domain-block.conf
+/etc/dnsmasq.d/90-pi-router-domain-block.conf
 ```
 
 This includes selected proxy/remote-browser domains and related policy entries. The authoritative Tor relay feed dependency at `onionoo.torproject.org` is explicitly exempted from the parent Tor Project DNS block so the endpoint refresh engine can continue to retrieve relay data.
@@ -159,7 +159,7 @@ blocked_ip_endpoints_v4
 Automatic refresh is handled by:
 
 ```text
-proton-router-ip-refresh.timer
+pi-router-ip-refresh.timer
 ```
 
 The default schedule is every six hours:
@@ -176,15 +176,15 @@ The initial endpoint-database build is not required to complete installation. Th
 Useful diagnostics:
 
 ```bash
-sudo systemctl status proton-router-ip-refresh.service
-sudo systemctl status proton-router-ip-refresh.timer
-sudo journalctl -u proton-router-ip-refresh.service --no-pager
+sudo systemctl status pi-router-ip-refresh.service
+sudo systemctl status pi-router-ip-refresh.timer
+sudo journalctl -u pi-router-ip-refresh.service --no-pager
 ```
 
 A manual CLI refresh can be started with:
 
 ```bash
-sudo systemctl start proton-router-ip-refresh.service
+sudo systemctl start pi-router-ip-refresh.service
 ```
 
 ## Local web interface
@@ -220,9 +220,9 @@ The UI can:
 The backend exposes purpose-specific API routes rather than a general shell endpoint.
 
 Web updates use `https://github.com/McDonald-Andrew/pi-router` by default. To use
-a fork, change `GITHUB_REPOSITORY_URL` in `/etc/proton-router-update.conf` to an
+a fork, change `GITHUB_REPOSITORY_URL` in `/etc/pi-router-update.conf` to an
 `https://github.com/OWNER/REPOSITORY` URL. The release must contain the matching
-`proton-router-vX.Y.Z.tar.gz` and `proton-router-vX.Y.Z.sha256.txt` assets.
+`pi-router-vX.Y.Z.tar.gz` and `pi-router-vX.Y.Z.sha256.txt` assets.
 When an update is available, the updater verifies the published SHA-256,
 validates the archive layout, installs the router files, reapplies the existing
 router configuration, and reboots the Pi. The repository setting is preserved
@@ -313,7 +313,7 @@ FINAL VERIFICATION PASSED
 The primary installed configuration file is:
 
 ```text
-/etc/proton-router.conf
+/etc/pi-router.conf
 ```
 
 It controls:
@@ -332,10 +332,10 @@ It controls:
 After changing the installed configuration, run:
 
 ```bash
-sudo proton-router-apply-conf
+sudo pi-router-apply-conf
 ```
 
-`proton-router-apply-conf` generates and applies machine-specific configuration including:
+`pi-router-apply-conf` generates and applies machine-specific configuration including:
 
 - nftables variables
 - dnsmasq variables
@@ -394,7 +394,7 @@ src/
 ├── requirements-apt.txt
 ├── requirements-optional.txt
 ├── config/
-│   ├── 90-proton-router-domain-block.conf
+│   ├── 90-pi-router-domain-block.conf
 │   ├── 99-router.conf
 │   ├── NetworkManager-wait-online.override.conf
 │   ├── dnsmasq-router.conf
@@ -402,12 +402,12 @@ src/
 │   ├── nftables.conf
 │   ├── proton-bypass-devices.conf.example
 │   ├── proton-repository.conf
-│   ├── proton-router-ip-refresh.service
-│   ├── proton-router-ip-refresh.timer
-│   ├── proton-router-update.conf
-│   ├── proton-router-update.service
-│   ├── proton-router-web.service
-│   ├── proton-router.conf.example
+│   ├── pi-router-ip-refresh.service
+│   ├── pi-router-ip-refresh.timer
+│   ├── pi-router-update.conf
+│   ├── pi-router-update.service
+│   ├── pi-router-web.service
+│   ├── pi-router.conf.example
 │   ├── protonvpn-autoconnect.service
 │   ├── protonvpn-healthcheck.service
 │   └── protonvpn-healthcheck.timer
@@ -430,9 +430,9 @@ src/
 ├── scripts/
 │   ├── proton-bypass
 │   ├── proton-keyring-init
-│   ├── proton-router-apply-conf
-│   ├── proton-router-ip-refresh
-│   ├── proton-router-update
+│   ├── pi-router-apply-conf
+│   ├── pi-router-ip-refresh
+│   ├── pi-router-update
 │   ├── protonvpn-autoconnect
 │   └── protonvpn-healthcheck
 └── web/
@@ -461,13 +461,13 @@ Also do not commit machine-generated files such as:
 ```text
 /etc/nftables.d/generated-vars.nft
 /etc/dnsmasq.d/generated-vars.conf
-/etc/lightdm/lightdm.conf.d/90-proton-router-autologin.conf
+/etc/lightdm/lightdm.conf.d/90-pi-router-autologin.conf
 /etc/polkit-1/rules.d/49-protonvpn-networkmanager.rules
 /etc/sudoers.d/protonvpn-bootstrap
 /etc/systemd/system/proton-keyring-init.service
 ```
 
-IP blocklist run snapshots and last-known-good provider data under `/var/lib/proton-router/ip-block/` are runtime state and should not be treated as repository source.
+IP blocklist run snapshots and last-known-good provider data under `/var/lib/pi-router/ip-block/` are runtime state and should not be treated as repository source.
 
 ## Quick verification
 
@@ -480,14 +480,14 @@ sysctl net.ipv4.ip_forward
 ip -4 rule show
 ip -4 route show table 200
 systemctl --user status protonvpn-autoconnect.service --no-pager
-systemctl --user status proton-router-web.service --no-pager
-sudo systemctl status proton-router-ip-refresh.timer --no-pager
+systemctl --user status pi-router-web.service --no-pager
+sudo systemctl status pi-router-ip-refresh.timer --no-pager
 ```
 
 The canonical end-to-end verification is:
 
 ```bash
-cd ~/proton-router-vX.Y.Z # Replace with the release version, for example 0.1.0
+cd ~/pi-router-vX.Y.Z # Replace with the release version, for example 0.1.0
 
 ./setup \
     --live \
