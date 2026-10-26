@@ -113,6 +113,7 @@ Currently implemented phases:
   boot-services
   managed-connect
   pre-reboot
+  pre-reboot-resume
   post-reboot
   final-verify
 EOF

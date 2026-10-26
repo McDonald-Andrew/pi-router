@@ -654,8 +654,8 @@ IPLOCATE_URL='https://raw.githubusercontent.com/iplocate/free-proxy-list/main/al
 TOR_URL='https://onionoo.torproject.org/details?type=relay&running=true&fields=fingerprint,or_addresses,running'
 
 NFT_TABLE=router_filter
-NFT_SET=blocked_vpn_endpoints_v4
-NFT_RULE_COMMENT=PROTON_ROUTER_VPN_ENDPOINT_BLOCK_V1
+NFT_SET=blocked_ip_endpoints_v4
+NFT_RULE_COMMENT=PROTON_ROUTER_IP_ENDPOINT_BLOCK_V1
 
 mkdir -p "$RUNROOT" "$LKG"
 
