@@ -153,7 +153,7 @@ If a current provider feed or adapter fails, the refresh can use that provider's
 The published nftables set is:
 
 ```text
-blocked_vpn_endpoints_v4
+blocked_ip_endpoints_v4
 ```
 
 Automatic refresh is handled by:

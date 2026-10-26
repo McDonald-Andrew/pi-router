@@ -17,6 +17,8 @@ dotnet watch
 
 ### Build Locally
 
+Place the `proton-router-vX.Y.Z.tar.gz` archive in the repository root before running the build script.
+
 Install the .NET 8 SDK, then run:
 
 ```powershell
@@ -29,7 +31,7 @@ The publish folder will contain files including:
     proton-router-installer.sha256.txt
     THIRD-PARTY-NOTICES.txt
 
-GitHub Actions `Release Proton Router` workflow packages `src/`, creates the archive, builds the matching win-x64 installer, and uploads all release files.
+GitHub Actions `Proton Router Release` workflow packages `src/`, creates the archive, builds the matching win-x64 installer, and uploads all release files.
 
 ## Release Folder Used by the Installer
 
