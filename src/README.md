@@ -219,9 +219,9 @@ The UI can:
 
 The backend exposes purpose-specific API routes rather than a general shell endpoint.
 
-Web updates are disabled until the release repository is configured. Replace the
-placeholder in `/etc/proton-router-update.conf` with the GitHub repository URL
-in `https://github.com/OWNER/REPOSITORY` form. The release must contain the matching
+Web updates use `https://github.com/McDonald-Andrew/pi-router` by default. To use
+a fork, change `GITHUB_REPOSITORY_URL` in `/etc/proton-router-update.conf` to an
+`https://github.com/OWNER/REPOSITORY` URL. The release must contain the matching
 `proton-router-vX.Y.Z.tar.gz` and `proton-router-vX.Y.Z.sha256.txt` assets.
 When an update is available, the updater verifies the published SHA-256,
 validates the archive layout, installs the router files, reapplies the existing
