@@ -35,6 +35,7 @@ PROTONVPN="$(command -v protonvpn || true)"
 CURL="$(command -v curl || true)"
 SYSTEMCTL="$(command -v systemctl || true)"
 TIMEOUT="$(command -v timeout || true)"
+GETENT="$(command -v getent || true)"
 
 [ -n "$PROTONVPN" ] || {
     echo "protonvpn-healthcheck: protonvpn command is missing" >&2
@@ -53,6 +54,11 @@ TIMEOUT="$(command -v timeout || true)"
 
 [ -n "$TIMEOUT" ] || {
     echo "protonvpn-healthcheck: timeout command is missing" >&2
+    exit 1
+}
+
+[ -n "$GETENT" ] || {
+    echo "protonvpn-healthcheck: getent command is missing" >&2
     exit 1
 }
 
@@ -100,6 +106,12 @@ dataplane_once() {
         probe_url "http://1.0.0.1/cdn-cgi/trace"
 }
 
+dns_once() {
+    "$TIMEOUT" 8s \
+        "$GETENT" ahostsv4 api.github.com \
+        >/dev/null 2>&1
+}
+
 if ! wan_ready; then
     log "WAN is unavailable; skipping Proton recovery"
 
@@ -135,11 +147,15 @@ max_attempts=3
 
 while [ "$attempt" -le "$max_attempts" ]; do
     if dataplane_once; then
-        log "PASS - Proton data plane is healthy"
-        exit 0
-    fi
+        if dns_once; then
+            log "PASS - Proton data plane and DNS are healthy"
+            exit 0
+        fi
 
-    log "data-plane probe $attempt/$max_attempts failed"
+        log "DNS probe $attempt/$max_attempts failed"
+    else
+        log "data-plane probe $attempt/$max_attempts failed"
+    fi
 
     if [ "$attempt" -lt "$max_attempts" ]; then
         sleep 2
@@ -148,7 +164,7 @@ while [ "$attempt" -le "$max_attempts" ]; do
     attempt=$((attempt + 1))
 done
 
-log "FAIL - Proton reports Connected but data plane is unreachable"
+log "FAIL - Proton reports Connected but data plane or DNS is unreachable"
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
     exit 4
