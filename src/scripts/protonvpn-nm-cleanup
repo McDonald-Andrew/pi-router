@@ -62,11 +62,11 @@ managed_profile() {
 }
 
 all_profile_uuids() {
-    "$NMCLI" -g connection.uuid connection show 2>/dev/null
+    "$NMCLI" -g UUID connection show 2>/dev/null
 }
 
 active_profile_uuids() {
-    "$NMCLI" -g connection.uuid connection show --active 2>/dev/null
+    "$NMCLI" -g UUID connection show --active 2>/dev/null
 }
 
 uuid_is_active() {
