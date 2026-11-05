@@ -1,0 +1,201 @@
+#!/bin/sh
+set -eu
+
+PROTON_IF="${PROTON_IF:-proton0}"
+PROTON_PROFILE_PREFIX="${PROTON_PROFILE_PREFIX:-ProtonVPN }"
+SYS_CLASS_NET="${SYS_CLASS_NET:-/sys/class/net}"
+
+NMCLI="${NMCLI:-$(command -v nmcli || true)}"
+TIMEOUT="${TIMEOUT:-$(command -v timeout || true)}"
+FLOCK="${FLOCK:-$(command -v flock || true)}"
+LOCK_FILE="${LOCK_FILE:-${XDG_RUNTIME_DIR:-/tmp}/pi-router-protonvpn-nm-cleanup-$(id -u).lock}"
+
+[ -n "$NMCLI" ] || {
+    echo "protonvpn-nm-cleanup: nmcli command is missing" >&2
+    exit 1
+}
+
+[ -n "$TIMEOUT" ] || {
+    echo "protonvpn-nm-cleanup: timeout command is missing" >&2
+    exit 1
+}
+
+[ -n "$FLOCK" ] || {
+    echo "protonvpn-nm-cleanup: flock command is missing" >&2
+    exit 1
+}
+
+exec 9>"$LOCK_FILE" || {
+    echo "protonvpn-nm-cleanup: unable to open cleanup lock" >&2
+    exit 1
+}
+
+"$FLOCK" -w 30 9 || {
+    echo "protonvpn-nm-cleanup: timed out waiting for cleanup lock" >&2
+    exit 1
+}
+
+log() {
+    printf 'protonvpn-nm-cleanup: %s\n' "$*" >&2
+}
+
+profile_value() {
+    field="$1"
+    uuid="$2"
+
+    "$NMCLI" -g "$field" connection show uuid "$uuid" 2>/dev/null
+}
+
+managed_profile() {
+    uuid="$1"
+    profile_type="$(profile_value connection.type "$uuid")"
+    profile_interface="$(profile_value connection.interface-name "$uuid")"
+    profile_name="$(profile_value connection.id "$uuid")"
+
+    [ "$profile_type" = "wireguard" ] || return 1
+    [ "$profile_interface" = "$PROTON_IF" ] || return 1
+
+    case "$profile_name" in
+        "$PROTON_PROFILE_PREFIX"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+all_profile_uuids() {
+    "$NMCLI" -g connection.uuid connection show 2>/dev/null
+}
+
+active_profile_uuids() {
+    "$NMCLI" -g connection.uuid connection show --active 2>/dev/null
+}
+
+uuid_is_active() {
+    wanted_uuid="$1"
+    active_uuids="$(active_profile_uuids)" || return 2
+
+    printf '%s\n' "$active_uuids" |
+        grep -F -x -q "$wanted_uuid"
+}
+
+device_uuid() {
+    [ -d "$SYS_CLASS_NET/$PROTON_IF" ] || return 1
+
+    "$NMCLI" -g GENERAL.CON-UUID device show "$PROTON_IF" 2>/dev/null
+}
+
+deactivate_uuid() {
+    uuid="$1"
+
+    log "deactivating stale $PROTON_IF connection $uuid"
+    "$TIMEOUT" 15s \
+        "$NMCLI" connection down uuid "$uuid" \
+        >/dev/null 2>&1
+}
+
+deactivate_stale_profiles() {
+    attempt=0
+
+    while [ -d "$SYS_CLASS_NET/$PROTON_IF" ]; do
+        attempt=$((attempt + 1))
+        [ "$attempt" -le 10 ] || {
+            log "unable to deactivate every $PROTON_IF connection"
+            return 1
+        }
+
+        uuid="$(device_uuid || true)"
+        [ -n "$uuid" ] && [ "$uuid" != "--" ] || {
+            log "unable to identify the active $PROTON_IF connection"
+            return 1
+        }
+
+        deactivate_uuid "$uuid" || return 1
+        sleep 1
+    done
+
+    # Catch tightly matched active profiles even if NetworkManager has already
+    # removed the proton0 device from sysfs.
+    profile_uuids="$(all_profile_uuids)" || {
+        log "unable to enumerate NetworkManager profiles"
+        return 1
+    }
+
+    for uuid in $profile_uuids; do
+        managed_profile "$uuid" || continue
+
+        if uuid_is_active "$uuid"; then
+            deactivate_uuid "$uuid" || return 1
+        else
+            active_result="$?"
+            [ "$active_result" -eq 1 ] || {
+                log "unable to enumerate active NetworkManager profiles"
+                return 1
+            }
+        fi
+    done
+
+    [ ! -d "$SYS_CLASS_NET/$PROTON_IF" ]
+}
+
+delete_managed_profiles_except() {
+    keep_uuid="${1:-}"
+    result=0
+    profile_uuids="$(all_profile_uuids)" || {
+        log "unable to enumerate NetworkManager profiles"
+        return 1
+    }
+
+    for uuid in $profile_uuids; do
+        managed_profile "$uuid" || continue
+        [ -n "$keep_uuid" ] && [ "$uuid" = "$keep_uuid" ] && continue
+
+        # Pruning must never tear down an unexpected active connection.
+        if uuid_is_active "$uuid"; then
+            log "refusing to delete unexpected active profile $uuid"
+            result=1
+            continue
+        else
+            active_result="$?"
+            if [ "$active_result" -ne 1 ]; then
+                log "unable to verify whether profile $uuid is active"
+                result=1
+                continue
+            fi
+        fi
+
+        log "deleting redundant inactive $PROTON_IF profile $uuid"
+        "$TIMEOUT" 15s \
+            "$NMCLI" connection delete uuid "$uuid" \
+            >/dev/null 2>&1 || result=1
+    done
+
+    return "$result"
+}
+
+prepare_connect() {
+    deactivate_stale_profiles || return 1
+    delete_managed_profiles_except ""
+}
+
+prune_connected() {
+    keep_uuid="$(device_uuid || true)"
+
+    [ -n "$keep_uuid" ] && [ "$keep_uuid" != "--" ] || {
+        log "cannot identify the active $PROTON_IF profile to preserve"
+        return 1
+    }
+
+    delete_managed_profiles_except "$keep_uuid"
+}
+
+case "${1:-}" in
+    --prepare-connect)
+        prepare_connect
+        ;;
+    --prune-connected)
+        prune_connected
+        ;;
+    *)
+        echo "usage: $0 {--prepare-connect|--prune-connected}" >&2
+        exit 64
+        ;;
+esac

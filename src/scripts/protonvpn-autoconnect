@@ -2,15 +2,31 @@
 set -eu
 
 CONFIG_FILE="/etc/pi-router.conf"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+NM_CLEANUP="$SCRIPT_DIR/protonvpn-nm-cleanup"
 
 [ -r "$CONFIG_FILE" ] || exit 1
 . "$CONFIG_FILE"
 
 [ -n "${WAN_IF:-}" ] || exit 1
 
+[ -x "$NM_CLEANUP" ] || exit 1
+
 close_bootstrap() {
     sudo -n /usr/sbin/nft flush chain inet router_filter host_wan_bootstrap \
         2>/dev/null || true
+}
+
+prepare_connection_attempt() {
+    "$NM_CLEANUP" --prepare-connect || {
+        echo "protonvpn-autoconnect: stale Proton cleanup failed" >&2
+        return 1
+    }
+}
+
+prune_connected_profiles() {
+    "$NM_CLEANUP" --prune-connected ||
+        echo "protonvpn-autoconnect: WARNING - redundant profile pruning failed" >&2
 }
 
 # Always fail closed when this script exits.
@@ -39,6 +55,7 @@ done
 
 # If Proton is already connected, leave the bootstrap gate closed.
 if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
+    prune_connected_profiles
     exit 0
 fi
 
@@ -54,15 +71,24 @@ attempt=1
 max_attempts=3
 
 while [ "$attempt" -le "$max_attempts" ]; do
+    # Every attempt starts without stale active connections or redundant
+    # inactive Proton-generated proton0 profiles.
+    prepare_connection_attempt || exit 1
+
     if timeout 90s protonvpn connect; then
+        prune_connected_profiles
         exit 0
     fi
 
     # Be conservative: if the CLI returned non-zero but Proton actually
     # reached Connected state, treat the connection as successful.
     if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
+        prune_connected_profiles
         exit 0
     fi
+
+    # A failed CLI attempt may leave both an active zombie and a saved profile.
+    prepare_connection_attempt || exit 1
 
     if [ "$attempt" -ge "$max_attempts" ]; then
         echo "protonvpn-autoconnect: failed after $max_attempts attempts" >&2

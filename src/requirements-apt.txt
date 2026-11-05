@@ -4,3 +4,4 @@ curl
 dnsmasq
 nftables
 proton-vpn-cli
+util-linux

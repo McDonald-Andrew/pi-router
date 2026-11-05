@@ -434,7 +434,8 @@ src/
 │   ├── pi-router-ip-refresh
 │   ├── pi-router-update
 │   ├── protonvpn-autoconnect
-│   └── protonvpn-healthcheck
+│   ├── protonvpn-healthcheck
+│   └── protonvpn-nm-cleanup
 └── web/
     ├── app.js
     ├── favicon.ico

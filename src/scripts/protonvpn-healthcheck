@@ -3,6 +3,8 @@ set -eu
 
 CONFIG_FILE="/etc/pi-router.conf"
 PROTON_IF="proton0"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+NM_CLEANUP="$SCRIPT_DIR/protonvpn-nm-cleanup"
 
 CHECK_ONLY=0
 
@@ -59,6 +61,11 @@ GETENT="$(command -v getent || true)"
 
 [ -n "$GETENT" ] || {
     echo "protonvpn-healthcheck: getent command is missing" >&2
+    exit 1
+}
+
+[ -x "$NM_CLEANUP" ] || {
+    echo "protonvpn-healthcheck: cleanup helper is missing" >&2
     exit 1
 }
 
@@ -148,6 +155,11 @@ max_attempts=3
 while [ "$attempt" -le "$max_attempts" ]; do
     if dataplane_once; then
         if dns_once; then
+            if [ "$CHECK_ONLY" -eq 0 ]; then
+                "$NM_CLEANUP" --prune-connected ||
+                    log "WARNING - redundant profile pruning failed"
+            fi
+
             log "PASS - Proton data plane and DNS are healthy"
             exit 0
         fi
@@ -182,6 +194,11 @@ if ! "$TIMEOUT" 30s "$PROTONVPN" disconnect; then
 fi
 
 sleep 2
+
+if ! "$NM_CLEANUP" --prepare-connect; then
+    log "FAIL - stale Proton NetworkManager connection remains active"
+    exit 1
+fi
 
 log "scheduling managed Proton reconnect"
 

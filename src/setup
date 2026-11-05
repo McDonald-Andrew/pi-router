@@ -670,6 +670,11 @@ phase_files() {
         0700
 
     install_user_source \
+        scripts/protonvpn-nm-cleanup \
+        .local/bin/protonvpn-nm-cleanup \
+        0700
+
+    install_user_source \
         config/protonvpn-autoconnect.service \
         .config/systemd/user/protonvpn-autoconnect.service \
         0664
@@ -4157,6 +4162,11 @@ verify_final_artifact_tree() {
     verify_static_source_install \
         scripts/protonvpn-autoconnect \
         "$ROUTER_HOME/.local/bin/protonvpn-autoconnect" \
+        "$router_uid" "$router_gid" 700
+
+    verify_static_source_install \
+        scripts/protonvpn-nm-cleanup \
+        "$ROUTER_HOME/.local/bin/protonvpn-nm-cleanup" \
         "$router_uid" "$router_gid" 700
 
     verify_static_source_install \
