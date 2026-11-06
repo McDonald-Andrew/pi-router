@@ -1,0 +1,11 @@
+{
+  "name": "Raspberry Pi 5",
+  "tags": [
+    "pi5-64bit",
+    "pi5-32bit"
+  ],
+  "icon": "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+  "description": "Raspberry Pi 5, 500 / 500+, and Compute Module 5",
+  "matching_type": "exclusive",
+  "capabilities": []
+}

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="referrer" content="no-referrer">
+    <meta name="pi-router-csrf" content="__PI_ROUTER_CSRF_TOKEN__">
+    <title>Pi Router setup</title>
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <p class="eyebrow">PI ROUTER · FIRST BOOT</p>
+        <h1>Finish Proton setup</h1>
+        <p class="lede">
+          This private page is available only on the downstream provisioning
+          network. Keep both Ethernet cables connected while setup finishes.
+        </p>
+      </header>
+
+      <section class="panel" aria-labelledby="status-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">LIVE STATUS</p>
+            <h2 id="status-heading">Router checks</h2>
+          </div>
+          <span id="status-badge" class="badge">Connecting</span>
+        </div>
+        <p id="status-summary" class="summary" aria-live="polite">
+          Contacting the local onboarding service…
+        </p>
+        <dl class="status-grid">
+          <div><dt>Hardware</dt><dd id="status-hardware">Checking</dd></div>
+          <div><dt>Cables</dt><dd id="status-cables">Checking</dd></div>
+          <div><dt>WAN</dt><dd id="status-wan">Checking</dd></div>
+          <div><dt>Setup</dt><dd id="status-setup">Checking</dd></div>
+          <div><dt>Error</dt><dd id="status-error">None</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel" aria-labelledby="signin-heading">
+        <p class="eyebrow">ONE-TIME ACTION</p>
+        <h2 id="signin-heading">Sign in to Proton VPN</h2>
+        <p>
+          Credentials are sent directly to the local first-boot process for
+          this attempt. They are not written to an image-owned file or log.
+        </p>
+        <p>
+          Do not let the browser save this password for the router address.
+        </p>
+        <form id="onboarding-form" novalidate>
+          <label for="proton-username">Proton username</label>
+          <input
+            id="proton-username"
+            name="username"
+            type="text"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            maxlength="254"
+            required
+          >
+
+          <label for="proton-password">Proton password</label>
+          <input
+            id="proton-password"
+            name="password"
+            type="password"
+            autocomplete="off"
+            autocapitalize="none"
+            spellcheck="false"
+            maxlength="1024"
+            required
+          >
+
+          <button id="submit-button" type="submit">Continue securely</button>
+          <p id="form-result" class="form-result" aria-live="polite"></p>
+        </form>
+      </section>
+
+      <aside class="notice">
+        <strong>Certificate notice</strong>
+        <p>
+          This router creates its own unique certificate on first boot. Your
+          browser may show a one-time warning because no public certificate
+          authority signs private IP addresses. Continue only while connected
+          to the physically trusted provisioning LAN.
+        </p>
+      </aside>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,272 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+die() {
+    printf 'customize-rootfs: ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 ||
+        die "required host command is unavailable: $1"
+}
+
+[[ $# -eq 1 ]] || die "usage: customize-rootfs ROOT"
+[[ $EUID -eq 0 ]] || die "root privileges are required"
+
+for name in \
+    PI_ROUTER_VERSION \
+    PI_ROUTER_IMAGE_PROFILE \
+    PI_ROUTER_RELEASE_ARCHIVE \
+    PI_ROUTER_RELEASE_SHA256 \
+    PI_ROUTER_SOURCE_COMMIT \
+    PI_ROUTER_BASE_IMAGE_FILENAME \
+    PI_ROUTER_BASE_IMAGE_SHA256
+do
+    [[ -n "${!name:-}" ]] || die "required environment value is missing: $name"
+done
+
+for command_name in \
+    chown \
+    dpkg-query \
+    install \
+    sha256sum \
+    systemctl \
+    systemd-sysusers \
+    tar
+do
+    require_command "$command_name"
+done
+
+root="$(realpath -e "$1")"
+[[ "$root" != / ]] || die "target root cannot be the host filesystem root"
+[[ -f "$root/etc/os-release" ]] || die "target is not a Linux root filesystem"
+[[ -d "$root/boot/firmware" ]] || die "boot filesystem is not mounted"
+
+case "$PI_ROUTER_IMAGE_PROFILE" in
+    development)
+        certification_status=development
+        ;;
+    release)
+        certification_status=release
+        ;;
+    *)
+        die "unsupported image profile: $PI_ROUTER_IMAGE_PROFILE"
+        ;;
+esac
+
+version=$PI_ROUTER_VERSION
+release_name="pi-router-v$version"
+release_path="$root/opt/pi-router/releases/$release_name"
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+firstboot_source="$script_dir/firstboot"
+
+[[ ! -e "$release_path" && ! -L "$release_path" ]] ||
+    die "release destination already exists"
+[[ ! -e "$root/opt/pi-router/current" && ! -L "$root/opt/pi-router/current" ]] ||
+    die "stable release path already exists"
+
+install -d -o root -g root -m 0755 "$root/opt/pi-router/releases"
+tar -xzf "$PI_ROUTER_RELEASE_ARCHIVE" --no-same-owner \
+    -C "$root/opt/pi-router/releases"
+[[ -f "$release_path/setup" && ! -L "$release_path/setup" ]] ||
+    die "versioned setup executable is missing"
+chown -R root:root "$release_path"
+chmod 0755 "$release_path/setup"
+ln -s "releases/$release_name" "$root/opt/pi-router/current"
+
+# The PCIe NIC must be visible on the first hardware boot. Run setup's public
+# staging-mode boot phase with the host Bash; no target ARM binary is executed.
+bash "$release_path/setup" \
+    --root "$root" \
+    --phase boot \
+    --pcie-state missing \
+    --non-interactive
+
+# Preserve the official image's locked UID/GID 1000 placeholder. Raspberry Pi
+# Imager and the official cloud-init flow will create/configure `admin` from
+# the settings selected by the person flashing the card.
+[[ "$(awk -F: '$1 == "admin" || $3 == 1000 {print}' "$root/etc/passwd")" == \
+   'pi:x:1000:1000::/home/pi:/usr/sbin/nologin' ]] ||
+    die "pinned base UID 1000 placeholder changed or collides with admin"
+[[ "$(awk -F: '$1 == "admin" || $3 == 1000 {print}' "$root/etc/group")" == \
+   'pi:x:1000:' ]] ||
+    die "pinned base GID 1000 placeholder changed or collides with admin"
+[[ "$(awk -F: '$1 == "admin" || $1 == "pi" {print $1 ":" $2}' \
+    "$root/etc/shadow")" == 'pi:!' ]] ||
+    die "pinned base UID 1000 placeholder is not locked"
+[[ -d "$root/home/pi" && ! -L "$root/home/pi" ]] ||
+    die "pinned base UID 1000 home is missing or unsafe"
+[[ "$(stat -c '%u:%g:%a' "$root/home/pi")" == '1000:1000:700' ]] ||
+    die "pinned base UID 1000 home metadata changed"
+
+# Install the isolated first-boot stack before creating its service account.
+install -D -o root -g root -m 0600 \
+    "$firstboot_source/pi-router-image.conf" \
+    "$root/etc/pi-router-image.conf"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/00-pi-router-image.preset" \
+    "$root/etc/systemd/system-preset/00-pi-router-image.preset"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/zz-pi-router-image-bootstrap.conf" \
+    "$root/etc/sysctl.d/zz-pi-router-image-bootstrap.conf"
+install -D -o root -g root -m 0755 \
+    "$firstboot_source/pi-router-policy-rc.d" \
+    "$root/usr/sbin/policy-rc.d"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/pi-router-sshd.conf" \
+    "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf"
+
+for module in \
+    pi_router_image_state.py \
+    pi_router_image_controller.py \
+    pi_router_image_pty.py \
+    pi_router_onboarding_backend.py \
+    pi_router_onboarding_frontend.py
+do
+    install -D -o root -g root -m 0644 \
+        "$firstboot_source/$module" \
+        "$root/usr/local/lib/pi-router-image/$module"
+done
+
+for executable in \
+    pi-router-firstboot \
+    pi-router-onboarding \
+    pi-router-onboarding-backend
+do
+    install -D -o root -g root -m 0755 \
+        "$firstboot_source/$executable" \
+        "$root/usr/local/libexec/$executable"
+done
+
+for unit in \
+    pi-router-firstboot.service \
+    pi-router-firstboot.timer \
+    pi-router-onboarding.service \
+    pi-router-onboarding-backend.service
+do
+    install -D -o root -g root -m 0644 \
+        "$firstboot_source/$unit" \
+        "$root/etc/systemd/system/$unit"
+done
+
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/pi-router-onboarding.sysusers" \
+    "$root/usr/lib/sysusers.d/pi-router-onboarding.conf"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/onboarding-index.html" \
+    "$root/usr/local/share/pi-router-onboarding/index.html"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/onboarding-app.js" \
+    "$root/usr/local/share/pi-router-onboarding/app.js"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/onboarding-styles.css" \
+    "$root/usr/local/share/pi-router-onboarding/styles.css"
+
+systemd-sysusers --root="$root"
+
+printf 'pi-router\n' > "$root/etc/hostname"
+if grep -Eq '^127\.0\.1\.1[[:space:]]' "$root/etc/hosts"; then
+    sed -i -E 's/^127\.0\.1\.1[[:space:]].*$/127.0.1.1\tpi-router/' \
+        "$root/etc/hosts"
+else
+    printf '127.0.1.1\tpi-router\n' >> "$root/etc/hosts"
+fi
+
+unsafe_units=(
+    dnsmasq.service
+    nftables.service
+    ssh.service
+    ssh.socket
+    pi-router-ip-refresh.timer
+    avahi-daemon.service
+    avahi-daemon.socket
+    cups.service
+    cups.socket
+    cups.path
+    rpcbind.service
+    rpcbind.socket
+    wayvnc.service
+    vncserver-x11-serviced.service
+    xrdp.service
+    cockpit.socket
+)
+for unit in "${unsafe_units[@]}"; do
+    systemctl --root="$root" disable "$unit" >/dev/null 2>&1 || true
+done
+systemctl --root="$root" enable pi-router-firstboot.timer >/dev/null
+
+manifest_dir="$root/usr/share/pi-router/image-build"
+install -d -o root -g root -m 0755 "$manifest_dir"
+setup_sha256="$(sha256sum "$release_path/setup" | awk '{print $1}')"
+{
+    printf 'certification_status=%s\n' "$certification_status"
+    printf 'router_version=%s\n' "$version"
+    printf 'router_release_sha256=%s\n' "$PI_ROUTER_RELEASE_SHA256"
+    printf 'release_name=%s\n' "$release_name"
+    printf 'release_setup_sha256=%s\n' "$setup_sha256"
+    printf 'router_source_commit=%s\n' "$PI_ROUTER_SOURCE_COMMIT"
+    printf 'image_source_commit=%s\n' "$PI_ROUTER_SOURCE_COMMIT"
+    printf 'base_image_filename=%s\n' "$PI_ROUTER_BASE_IMAGE_FILENAME"
+    printf 'base_image_sha256=%s\n' "$PI_ROUTER_BASE_IMAGE_SHA256"
+    printf 'base_os=raspberry-pi-os\n'
+    printf 'architecture=arm64\n'
+} > "$manifest_dir/metadata"
+
+dpkg-query \
+    --admindir="$root/var/lib/dpkg" \
+    -W \
+    -f='${binary:Package}\t${Version}\t${Architecture}\n' |
+    LC_ALL=C sort > "$manifest_dir/packages.tsv"
+printf '%s  %s.tar.gz\n' "$PI_ROUTER_RELEASE_SHA256" "$release_name" > \
+    "$manifest_dir/source.sha256"
+chmod 0644 \
+    "$manifest_dir/metadata" \
+    "$manifest_dir/packages.tsv" \
+    "$manifest_dir/source.sha256"
+
+# Remove cloneable or private state from the distributable image.
+rm -f -- "$root/etc/shadow-"
+rm -f -- "$root/var/backups"/shadow*
+rm -f -- "$root/etc/machine-id"
+rm -f -- "$root/etc/ssh"/ssh_host_*
+rm -f -- "$root/var/lib/dbus/machine-id"
+rm -f -- "$root/var/lib/systemd/random-seed"
+rm -f -- "$root/var/lib/systemd/credential.secret"
+rm -rf -- "$root/etc/NetworkManager/system-connections"
+install -d -o root -g root -m 0700 \
+    "$root/etc/NetworkManager/system-connections"
+rm -rf -- "$root/var/lib/NetworkManager"
+install -d -o root -g root -m 0700 "$root/var/lib/NetworkManager"
+rm -f -- "$root/var/lib/dhcp"/*
+rm -rf -- "$root/var/lib/bluetooth"
+rm -f -- \
+    "$root/boot/firstrun.sh" \
+    "$root/boot/firmware/firstrun.sh" \
+    "$root/boot/userconf" \
+    "$root/boot/userconf.txt" \
+    "$root/boot/firmware/userconf" \
+    "$root/boot/firmware/userconf.txt" \
+    "$root/etc/wpa_supplicant/wpa_supplicant.conf"
+rm -rf -- "$root/root/.ssh"
+rm -f -- "$root/root"/.*history
+rm -f -- "$root/etc/ssl/private/ssl-cert-snakeoil.key"
+rm -rf -- "$root/etc/cups/ssl"
+rm -f -- \
+    "$root/etc/pi-router.conf" \
+    "$root/etc/nftables.d/generated-vars.nft" \
+    "$root/etc/dnsmasq.d/generated-vars.conf" \
+    "$root/var/lib/pi-router-setup/reboot-required.boot-id"
+rm -rf -- "$root/var/lib/pi-router-image" "$root/run/pi-router-image"
+rm -rf -- "$root/var/lib/apt/lists"/*
+rm -rf -- "$root/var/cache/apt/archives/partial"
+rm -rf -- "$root/var/log/journal"/*
+find "$root/var/log" -xdev -type f -exec truncate -s 0 -- {} +
+
+printf 'uninitialized\n' > "$root/etc/machine-id"
+chmod 0444 "$root/etc/machine-id"
+
+printf 'customize-rootfs: PASS: %s for Pi Router %s\n' \
+    "$PI_ROUTER_IMAGE_PROFILE" \
+    "$version"

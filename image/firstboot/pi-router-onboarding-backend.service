@@ -1,0 +1,26 @@
+[Unit]
+Description=Pi Router privileged one-time onboarding broker
+After=local-fs.target NetworkManager.service
+Before=pi-router-onboarding.service
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=root
+Group=root
+UMask=0077
+ExecStart=/usr/local/libexec/pi-router-onboarding-backend
+KillMode=control-group
+TimeoutStartSec=45s
+TimeoutStopSec=45s
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+LockPersonality=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+LimitCORE=0
+MemorySwapMax=0
+StandardOutput=journal
+StandardError=journal

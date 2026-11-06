@@ -1,0 +1,66 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+SETUP="$REPOSITORY_ROOT/src/setup"
+CONTRACT="$REPOSITORY_ROOT/image/README.md"
+ANSWERS="$REPOSITORY_ROOT/image/firstboot/pi-router-image.conf"
+
+fail() {
+    printf 'test-contract: FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+require_literal() {
+    file=$1
+    value=$2
+
+    grep -Fq -- "$value" "$file" ||
+        fail "$file does not contain required contract text: $value"
+}
+
+SETUP_HELP=$(bash "$SETUP" --help)
+
+for phase in \
+    files \
+    bypass \
+    boot \
+    repository \
+    packages \
+    config \
+    pre-reboot \
+    pre-reboot-resume \
+    post-reboot \
+    final-verify
+do
+    printf '%s\n' "$SETUP_HELP" |
+        grep -Eq "(^|[[:space:]])$phase([[:space:]]|$)" ||
+        fail "setup does not advertise required phase: $phase"
+done
+
+for value in \
+    '/opt/pi-router/current/setup' \
+    '/var/lib/pi-router-setup/reboot-required.boot-id' \
+    '/var/lib/pi-router-image/' \
+    'pre-reboot-complete' \
+    'post-reboot-complete' \
+    'FINAL VERIFICATION PASSED'
+do
+    require_literal "$CONTRACT" "$value"
+done
+
+require_literal "$ANSWERS" 'ROUTER_USER="admin"'
+require_literal "$ANSWERS" 'LAN_IF=""'
+require_literal "$ANSWERS" 'WAN_IF=""'
+
+if grep -R -n -E \
+    'pi-router-(firstboot|onboarding)|/var/lib/pi-router-image|/opt/pi-router/current' \
+    "$REPOSITORY_ROOT/src/setup" \
+    "$REPOSITORY_ROOT/windows-installer"
+then
+    fail "an existing installer depends on the image subsystem"
+fi
+
+printf 'test-contract: PASS\n'

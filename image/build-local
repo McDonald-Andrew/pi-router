@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bash image/build-local VERSION OUTPUT_DIR WORK_DIR [PROFILE]
+
+Builds a Raspberry Pi Imager-compatible image from the current committed
+repository without requiring a prebuilt release archive.
+
+PROFILE defaults to development. Valid profiles are development and release.
+
+WORK_DIR must be on a Linux filesystem and have about 16 GiB free. The pinned
+official Raspberry Pi OS download is cached there for later builds.
+EOF
+}
+
+die() {
+    printf 'build-local: ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ $# -ge 3 && $# -le 4 ]] || {
+    usage >&2
+    exit 2
+}
+
+version=$1
+output_dir=$2
+work_dir=$3
+profile=${4:-development}
+
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+    die "VERSION must match X.Y.Z or X.Y.Z-prerelease"
+
+case "$profile" in
+    development|release)
+        ;;
+    *)
+        die "PROFILE must be development or release"
+        ;;
+esac
+
+command -v git >/dev/null 2>&1 || die "git is required"
+command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required"
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(git -C "$script_dir/.." rev-parse --show-toplevel)"
+source_commit="$(git -C "$repository_root" rev-parse HEAD)"
+
+source_status="$(
+    git -C "$repository_root" status \
+        --porcelain=v1 \
+        --untracked-files=all \
+        -- \
+        src \
+        image
+)"
+[[ -z "$source_status" ]] ||
+    die "src/ and image/ must be committed and clean before building"
+
+temporary_root="$(mktemp -d)"
+cleanup() {
+    rm -rf -- "$temporary_root"
+}
+trap cleanup EXIT HUP INT TERM
+
+release_name="pi-router-v$version"
+archive="$temporary_root/$release_name.tar.gz"
+checksum="$temporary_root/$release_name.sha256.txt"
+
+git -C "$repository_root" archive \
+    --format=tar.gz \
+    --prefix="$release_name/" \
+    --output="$archive" \
+    "$source_commit:src"
+
+sha256sum "$archive" | awk '{print $1}' > "$checksum"
+
+PI_ROUTER_SOURCE_COMMIT="$source_commit" \
+    bash "$script_dir/build-image" \
+        "$profile" \
+        "$version" \
+        "$archive" \
+        "$checksum" \
+        "$output_dir" \
+        "$work_dir"

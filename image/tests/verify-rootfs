@@ -1,0 +1,409 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+fail() {
+    printf 'verify-rootfs: FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+assert_absent() {
+    local path=$1
+    local description=$2
+
+    [[ ! -e "$path" && ! -L "$path" ]] ||
+        fail "$description exists: $path"
+}
+
+assert_file() {
+    local path=$1
+    local metadata=$2
+    local description=$3
+
+    [[ -f "$path" && ! -L "$path" ]] ||
+        fail "$description is missing or is not a regular file: $path"
+    [[ "$(stat -c '%u:%g:%a' "$path")" == "$metadata" ]] ||
+        fail "$description has unsafe metadata: $path"
+}
+
+assert_copy() {
+    local source=$1
+    local target=$2
+    local metadata=$3
+    local description=$4
+
+    assert_file "$target" "$metadata" "$description"
+    cmp -s -- "$source" "$target" ||
+        fail "$description differs from the committed asset: $target"
+}
+
+assert_metadata() {
+    local key=$1
+    local expected=$2
+
+    [[ "$(grep -Fxc "$key=$expected" "$metadata")" -eq 1 ]] ||
+        fail "metadata mismatch for $key"
+}
+
+package_installed() {
+    local package=$1
+    local status
+
+    status="$(
+        dpkg-query \
+            --admindir="$root/var/lib/dpkg" \
+            -W \
+            -f='${db:Status-Status}' \
+            "$package" 2>/dev/null || true
+    )"
+    [[ "$status" == installed ]] || fail "required package is not installed: $package"
+}
+
+unit_state() {
+    systemctl --root="$root" is-enabled "$1" 2>/dev/null || true
+}
+
+[[ $# -eq 7 ]] ||
+    fail "usage: verify-rootfs ROOT PROFILE VERSION RELEASE_SHA256 SOURCE_COMMIT BASE_IMAGE_FILENAME BASE_IMAGE_SHA256"
+
+root=$1
+profile=$2
+version=$3
+release_sha=$4
+source_commit=$5
+base_filename=$6
+base_sha=$7
+
+[[ $EUID -eq 0 ]] || fail "root privileges are required for filesystem inspection"
+[[ -d "$root" ]] || fail "root filesystem directory does not exist: $root"
+root="$(realpath -e "$root")"
+[[ "$root" != / ]] || fail "target root cannot be the host filesystem root"
+
+for command_name in awk cmp dpkg-query find grep readlink realpath sha256sum stat systemctl; do
+    command -v "$command_name" >/dev/null 2>&1 ||
+        fail "required host command is unavailable: $command_name"
+done
+
+case "$profile" in
+    development)
+        expected_certification_status=development
+        ;;
+    release)
+        expected_certification_status=release
+        ;;
+    *)
+        fail "invalid profile: $profile"
+        ;;
+esac
+
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+    fail "invalid router version"
+[[ "$release_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid release SHA-256"
+[[ "$source_commit" =~ ^[0-9a-f]{40}$ ]] || fail "invalid source commit"
+[[ "$base_filename" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-raspios-[a-z0-9-]+-arm64\.img\.xz$ ]] ||
+    fail "invalid pinned base image filename"
+[[ "$base_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid base image SHA-256"
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+asset_dir="$script_dir/../firstboot"
+release_dir="pi-router-v$version"
+release_path="$root/opt/pi-router/releases/$release_dir"
+metadata="$root/usr/share/pi-router/image-build/metadata"
+packages="$root/usr/share/pi-router/image-build/packages.tsv"
+source_receipt="$root/usr/share/pi-router/image-build/source.sha256"
+preset="$root/etc/systemd/system-preset/00-pi-router-image.preset"
+
+assert_file "$release_path/setup" "0:0:755" "versioned setup executable"
+[[ -L "$root/opt/pi-router/current" ]] || fail "stable release symlink is missing"
+[[ "$(readlink "$root/opt/pi-router/current")" == "releases/$release_dir" ]] ||
+    fail "stable release symlink has the wrong target"
+
+target_arch="$(
+    dpkg-query \
+        --admindir="$root/var/lib/dpkg" \
+        -W \
+        -f='${Architecture}' \
+        dpkg 2>/dev/null || true
+)"
+[[ "$target_arch" == arm64 ]] || fail "target dpkg architecture is not arm64"
+
+assert_file "$packages" "0:0:644" "package manifest"
+cmp -s \
+    <(
+        dpkg-query \
+            --admindir="$root/var/lib/dpkg" \
+            -W \
+            -f='${binary:Package}\t${Version}\t${Architecture}\n' |
+            LC_ALL=C sort
+    ) \
+    "$packages" || fail "package manifest does not match the target dpkg database"
+
+grep -Eq '^(raspi-firmware|raspberrypi-bootloader)(:arm64)?[[:space:]]' "$packages" ||
+    fail "Raspberry Pi firmware package is missing"
+grep -Eq '^linux-image-[^[:space:]]*rpi-2712(:arm64)?[[:space:]]' "$packages" ||
+    fail "Raspberry Pi 5 kernel package is missing"
+grep -Eq '^lightdm(:arm64)?[[:space:]]' "$packages" ||
+    fail "LightDM desktop package is missing"
+for package in cloud-init openssh-server openssl python3; do
+    package_installed "$package"
+done
+
+[[ -f "$root/usr/share/wayland-sessions/rpd-labwc.desktop" ]] ||
+    fail "Raspberry Pi desktop session is missing"
+[[ "$(systemctl --root="$root" get-default 2>/dev/null)" == graphical.target ]] ||
+    fail "default systemd target is not graphical.target"
+
+[[ -f "$root/boot/firmware/config.txt" ]] || fail "Pi firmware config is missing"
+[[ -f "$root/boot/firmware/kernel_2712.img" ]] ||
+    fail "Raspberry Pi 5 kernel image is missing"
+[[ -f "$root/boot/firmware/bcm2712-rpi-5-b.dtb" ]] ||
+    fail "Raspberry Pi 5 device tree is missing"
+[[ "$(grep -Ec '^[[:space:]]*dtparam=pciex1([[:space:]]*(#.*)?)?$' \
+    "$root/boot/firmware/config.txt")" -eq 1 ]] ||
+    fail "firmware config does not contain exactly one PCIe x1 setting"
+! grep -Eq '^[[:space:]]*dtparam=pciex1_gen=3([[:space:]]*(#.*)?)?$' \
+    "$root/boot/firmware/config.txt" ||
+    fail "firmware config contains the forbidden PCIe Gen3 setting"
+
+assert_file "$metadata" "0:0:644" "image build metadata"
+assert_metadata certification_status "$expected_certification_status"
+assert_metadata router_version "$version"
+assert_metadata router_release_sha256 "$release_sha"
+assert_metadata release_name "$release_dir"
+setup_sha256="$(sha256sum "$release_path/setup" | awk '{print $1}')"
+assert_metadata release_setup_sha256 "$setup_sha256"
+assert_metadata router_source_commit "$source_commit"
+assert_metadata image_source_commit "$source_commit"
+assert_metadata base_image_filename "$base_filename"
+assert_metadata base_image_sha256 "$base_sha"
+assert_metadata base_os raspberry-pi-os
+assert_metadata architecture arm64
+[[ "$(wc -l < "$metadata")" -eq 11 ]] || fail "image build metadata has unexpected fields"
+
+assert_file "$source_receipt" "0:0:644" "embedded source checksum receipt"
+[[ "$(wc -l < "$source_receipt")" -eq 1 ]] ||
+    fail "embedded source checksum receipt has unexpected fields"
+grep -Fxq "$release_sha  $release_dir.tar.gz" "$source_receipt" ||
+    fail "embedded source checksum receipt mismatch"
+
+assert_file "$root/etc/machine-id" "0:0:444" "machine-id placeholder"
+[[ "$(cat "$root/etc/machine-id")" == uninitialized ]] ||
+    fail "machine-id was not sanitized"
+[[ "$(cat "$root/etc/hostname")" == pi-router ]] || fail "image hostname is not pi-router"
+grep -Eq '^127\.0\.1\.1[[:space:]]+pi-router$' "$root/etc/hosts" ||
+    fail "image hostname is not mapped in /etc/hosts"
+
+for forbidden in \
+    "$root/var/lib/dbus/machine-id" \
+    "$root/var/lib/systemd/random-seed" \
+    "$root/var/lib/systemd/credential.secret" \
+    "$root/var/lib/bluetooth" \
+    "$root/boot/firstrun.sh" \
+    "$root/boot/firmware/firstrun.sh" \
+    "$root/boot/userconf" \
+    "$root/boot/userconf.txt" \
+    "$root/boot/firmware/userconf" \
+    "$root/boot/firmware/userconf.txt" \
+    "$root/etc/wpa_supplicant/wpa_supplicant.conf" \
+    "$root/etc/ssl/private/ssl-cert-snakeoil.key" \
+    "$root/etc/cups/ssl" \
+    "$root/etc/pi-router.conf" \
+    "$root/etc/nftables.d/generated-vars.nft" \
+    "$root/etc/dnsmasq.d/generated-vars.conf" \
+    "$root/etc/dnsmasq.d/00-pi-router-provisioning.conf" \
+    "$root/var/lib/pi-router-setup/reboot-required.boot-id" \
+    "$root/var/lib/pi-router-image" \
+    "$root/run/pi-router-image"
+do
+    assert_absent "$forbidden" "forbidden image state"
+done
+
+if find "$root" -xdev \( -name onboarding.crt -o -name onboarding.key \) \
+    -print -quit | grep -q .
+then
+    fail "runtime onboarding TLS material remains in the image"
+fi
+
+if [[ -d "$root/etc/ssh" ]] &&
+   find "$root/etc/ssh" -maxdepth 1 -name 'ssh_host_*' -print -quit | grep -q .
+then
+    fail "SSH host key remains in the image"
+fi
+
+for state_dir in \
+    "$root/etc/NetworkManager/system-connections" \
+    "$root/var/lib/NetworkManager"
+do
+    [[ -d "$state_dir" && ! -L "$state_dir" ]] ||
+        fail "NetworkManager state directory is missing or unsafe: $state_dir"
+    [[ "$(stat -c '%u:%g:%a' "$state_dir")" == 0:0:700 ]] ||
+        fail "NetworkManager state directory has unsafe metadata: $state_dir"
+    ! find "$state_dir" -mindepth 1 -print -quit | grep -q . ||
+        fail "NetworkManager clone state remains in the image: $state_dir"
+done
+
+if find "$root/root" "$root/home" \
+    \( -name authorized_keys -o -name authorized_keys2 \) \
+    -print -quit | grep -q .
+then
+    fail "SSH authorized keys remain in the image"
+fi
+
+if find "$root/var/log" -xdev -type f -size +0c -print -quit | grep -q .; then
+    fail "nonempty build log remains in the image"
+fi
+
+[[ "$(awk -F: '$1 == "admin" || $3 == 1000 {print}' "$root/etc/passwd")" == \
+   'pi:x:1000:1000::/home/pi:/usr/sbin/nologin' ]] ||
+    fail "official UID 1000 placeholder changed or collides with admin"
+[[ "$(awk -F: '$1 == "admin" || $3 == 1000 {print}' "$root/etc/group")" == \
+   'pi:x:1000:' ]] ||
+    fail "official GID 1000 placeholder changed or collides with admin"
+[[ "$(awk -F: '$1 == "admin" || $1 == "pi" {print $1 ":" $2}' \
+    "$root/etc/shadow")" == 'pi:!' ]] ||
+    fail "official UID 1000 placeholder is not locked"
+[[ -d "$root/home/pi" && ! -L "$root/home/pi" ]] ||
+    fail "official UID 1000 home is missing or unsafe"
+[[ "$(stat -c '%u:%g:%a' "$root/home/pi")" == 1000:1000:700 ]] ||
+    fail "official UID 1000 home metadata changed"
+assert_absent "$root/etc/shadow-" "backup shadow file"
+if [[ -d "$root/var/backups" ]] &&
+   find "$root/var/backups" -maxdepth 1 -name 'shadow*' -print -quit | grep -q .
+then
+    fail "backup shadow file remains in the image"
+fi
+
+assert_copy "$asset_dir/00-pi-router-image.preset" "$preset" "0:0:644" "image safety preset"
+assert_copy \
+    "$asset_dir/zz-pi-router-image-bootstrap.conf" \
+    "$root/etc/sysctl.d/zz-pi-router-image-bootstrap.conf" \
+    "0:0:644" \
+    "temporary forwarding guard"
+assert_copy \
+    "$asset_dir/pi-router-policy-rc.d" \
+    "$root/usr/sbin/policy-rc.d" \
+    "0:0:755" \
+    "temporary package-service guard"
+assert_copy \
+    "$asset_dir/pi-router-image.conf" \
+    "$root/etc/pi-router-image.conf" \
+    "0:0:600" \
+    "firstboot setup defaults"
+assert_copy \
+    "$asset_dir/pi-router-sshd.conf" \
+    "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf" \
+    "0:0:644" \
+    "LAN-only admin SSH policy"
+grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf([[:space:]]|$)' \
+    "$root/etc/ssh/sshd_config" ||
+    fail "base sshd_config does not load the image-owned policy"
+
+audited_units=(
+    dnsmasq.service
+    nftables.service
+    ssh.service
+    ssh.socket
+    pi-router-ip-refresh.timer
+    avahi-daemon.service
+    avahi-daemon.socket
+    cups.service
+    cups.socket
+    cups.path
+    rpcbind.service
+    rpcbind.socket
+    wayvnc.service
+    vncserver-x11-serviced.service
+    xrdp.service
+    cockpit.socket
+)
+for unit in "${audited_units[@]}"; do
+    grep -Fxq "disable $unit" "$preset" ||
+        fail "image safety preset does not disable $unit"
+    state="$(unit_state "$unit")"
+    case "$state" in
+        disabled|masked|static|not-found)
+            ;;
+        *)
+            fail "$unit has unsafe image enablement state: ${state:-unknown}"
+            ;;
+    esac
+done
+
+[[ "$(unit_state pi-router-firstboot.timer)" == enabled ]] ||
+    fail "firstboot timer is not enabled"
+for unit in \
+    pi-router-firstboot.service \
+    pi-router-onboarding.service \
+    pi-router-onboarding-backend.service
+do
+    [[ "$(unit_state "$unit")" == static ]] || fail "$unit must remain static"
+done
+
+for module in \
+    pi_router_image_state.py \
+    pi_router_image_controller.py \
+    pi_router_image_pty.py \
+    pi_router_onboarding_backend.py \
+    pi_router_onboarding_frontend.py
+do
+    assert_copy \
+        "$asset_dir/$module" \
+        "$root/usr/local/lib/pi-router-image/$module" \
+        "0:0:644" \
+        "firstboot Python module"
+done
+
+for executable in pi-router-firstboot pi-router-onboarding pi-router-onboarding-backend; do
+    assert_copy \
+        "$asset_dir/$executable" \
+        "$root/usr/local/libexec/$executable" \
+        "0:0:755" \
+        "firstboot executable"
+done
+
+for unit in \
+    pi-router-firstboot.service \
+    pi-router-firstboot.timer \
+    pi-router-onboarding.service \
+    pi-router-onboarding-backend.service
+do
+    assert_copy \
+        "$asset_dir/$unit" \
+        "$root/etc/systemd/system/$unit" \
+        "0:0:644" \
+        "firstboot systemd unit"
+done
+
+assert_copy \
+    "$asset_dir/pi-router-onboarding.sysusers" \
+    "$root/usr/lib/sysusers.d/pi-router-onboarding.conf" \
+    "0:0:644" \
+    "onboarding sysusers definition"
+for asset in onboarding-index.html onboarding-app.js onboarding-styles.css; do
+    target_name="${asset#onboarding-}"
+    assert_copy \
+        "$asset_dir/$asset" \
+        "$root/usr/local/share/pi-router-onboarding/$target_name" \
+        "0:0:644" \
+        "onboarding web asset"
+done
+
+onboarding_passwd="$(awk -F: '$1 == "pi-router-onboarding" {print}' "$root/etc/passwd")"
+[[ "$(grep -c '^pi-router-onboarding:' "$root/etc/passwd")" -eq 1 ]] ||
+    fail "pi-router-onboarding account is missing or duplicated"
+[[ "$(cut -d: -f6 <<< "$onboarding_passwd")" == /nonexistent ]] ||
+    fail "pi-router-onboarding account has an unexpected home"
+[[ "$(cut -d: -f7 <<< "$onboarding_passwd")" == /usr/sbin/nologin ]] ||
+    fail "pi-router-onboarding account has an unsafe shell"
+onboarding_password="$(awk -F: '$1 == "pi-router-onboarding" {print $2}' "$root/etc/shadow")"
+case "$onboarding_password" in
+    \!*|\*)
+        ;;
+    *)
+        fail "pi-router-onboarding account is not password-locked"
+        ;;
+esac
+
+printf 'verify-rootfs: PASS: %s profile for Pi Router %s\n' \
+    "$profile" \
+    "$version"

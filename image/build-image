@@ -1,0 +1,487 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bash image/build-image PROFILE VERSION ARCHIVE CHECKSUM OUTPUT_DIR WORK_DIR
+
+PROFILE is one of:
+  development  Normal development image
+  release      Final-name image for exact-SHA hardware certification
+
+The builder customizes the pinned official Raspberry Pi OS Desktop image
+offline. It never executes an ARM target binary and does not use QEMU,
+binfmt, chroot, or pi-gen.
+
+Run this on Debian/Ubuntu Linux with sudo and a Linux filesystem for WORK_DIR.
+The official base image is downloaded once and retained in WORK_DIR's cache.
+EOF
+}
+
+die() {
+    printf 'build-image: ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+require_command() {
+    command -v "$1" >/dev/null 2>&1 ||
+        die "required host command is unavailable: $1"
+}
+
+fingerprint_artifact() {
+    local path=$1
+
+    python3 - "$path" <<'PY'
+import hashlib
+import os
+from pathlib import Path
+import stat
+import sys
+
+path = Path(sys.argv[1])
+flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+try:
+    descriptor = os.open(path, flags)
+except OSError as exc:
+    raise SystemExit(f"cannot open regular artifact: {exc}")
+
+with os.fdopen(descriptor, "rb") as stream:
+    before = os.fstat(stream.fileno())
+    if not stat.S_ISREG(before.st_mode) or before.st_size <= 0:
+        raise SystemExit("artifact must be a nonempty regular file")
+    digest = hashlib.sha256()
+    size = 0
+    while chunk := stream.read(1024 * 1024):
+        digest.update(chunk)
+        size += len(chunk)
+    after = os.fstat(stream.fileno())
+
+identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+if identity_before != identity_after or size != before.st_size:
+    raise SystemExit("artifact changed while it was hashed")
+print(digest.hexdigest(), size, before.st_dev, before.st_ino, before.st_mtime_ns)
+PY
+}
+
+[[ $# -eq 6 ]] || {
+    usage >&2
+    exit 2
+}
+
+profile=$1
+version=$2
+archive_input=$3
+checksum_input=$4
+output_input=$5
+work_input=$6
+
+case "$profile" in
+    development|release)
+        ;;
+    *)
+        die "PROFILE must be development or release"
+        ;;
+esac
+
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] ||
+    die "VERSION must match X.Y.Z or X.Y.Z-prerelease"
+[[ "$(uname -s)" == Linux ]] ||
+    die "the image customizer requires a Linux builder"
+
+for command_name in \
+    curl \
+    diff \
+    dpkg-query \
+    findmnt \
+    flock \
+    git \
+    install \
+    losetup \
+    lsblk \
+    mount \
+    python3 \
+    realpath \
+    sfdisk \
+    sha256sum \
+    stat \
+    sudo \
+    systemctl \
+    systemd-sysusers \
+    tar \
+    udevadm \
+    umount \
+    xz
+do
+    require_command "$command_name"
+done
+
+python3 -c 'import jsonschema' >/dev/null 2>&1 ||
+    die "python3-jsonschema is required to validate the Imager manifest"
+
+[[ -c /dev/loop-control ]] ||
+    die "loop-device support is unavailable: /dev/loop-control is missing"
+sudo losetup --find >/dev/null ||
+    die "no usable loop device is available"
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(realpath "$script_dir/..")"
+
+[[ -f "$archive_input" && ! -L "$archive_input" ]] ||
+    die "release archive must be a regular file: $archive_input"
+[[ -f "$checksum_input" && ! -L "$checksum_input" ]] ||
+    die "checksum must be a regular file: $checksum_input"
+archive="$(realpath "$archive_input")"
+checksum="$(realpath "$checksum_input")"
+
+release_name="pi-router-v$version"
+[[ "$(basename -- "$archive")" == "$release_name.tar.gz" ]] ||
+    die "archive basename must be $release_name.tar.gz"
+[[ "$(basename -- "$checksum")" == "$release_name.sha256.txt" ]] ||
+    die "checksum basename must be $release_name.sha256.txt"
+
+release_sha256="$(tr -d '\r\n[:space:]' < "$checksum")"
+[[ "$release_sha256" =~ ^[0-9A-Fa-f]{64}$ ]] ||
+    die "checksum file must contain exactly one SHA-256 value"
+release_sha256="${release_sha256,,}"
+[[ "$(sha256sum "$archive" | awk '{print $1}')" == "$release_sha256" ]] ||
+    die "release archive checksum does not match its SHA-256 counterpart"
+
+mkdir -p -- "$output_input" "$work_input"
+output_dir="$(realpath "$output_input")"
+work_dir="$(realpath "$work_input")"
+[[ "$output_dir" != "$work_dir" ]] ||
+    die "OUTPUT_DIR and WORK_DIR must be different directories"
+[[ "$work_dir" != / ]] || die "WORK_DIR cannot be the filesystem root"
+
+work_filesystem="$(stat -f -c '%T' "$work_dir")"
+case "$work_filesystem" in
+    9p|drvfs|fuseblk|ntfs|ntfs3|vfat|exfat|cifs)
+        die "WORK_DIR must use a native Linux filesystem, not $work_filesystem"
+        ;;
+esac
+
+build_lock_path="$work_dir/.pi-router-image-build.lock"
+exec {build_lock_fd}> "$build_lock_path"
+flock --nonblock "$build_lock_fd" ||
+    die "another image build owns $work_dir"
+
+source_commit="${PI_ROUTER_SOURCE_COMMIT:-}"
+if [[ -z "$source_commit" ]]; then
+    source_commit="$(git -C "$repository_root" rev-parse HEAD)"
+fi
+[[ "$source_commit" =~ ^[0-9a-fA-F]{40}$ ]] ||
+    die "PI_ROUTER_SOURCE_COMMIT must be a full Git commit"
+source_commit="${source_commit,,}"
+image_release_date="$(git -C "$repository_root" show -s --format=%cs "$source_commit")"
+[[ "$image_release_date" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] ||
+    die "source commit has no valid release date"
+git -C "$repository_root" cat-file -e "$source_commit^{commit}" ||
+    die "source commit is unavailable: $source_commit"
+[[ "$(git -C "$repository_root" rev-parse HEAD)" == "$source_commit" ]] ||
+    die "PI_ROUTER_SOURCE_COMMIT must equal the checked-out HEAD"
+for tree in src image; do
+    [[ "$(git -C "$repository_root" cat-file -t "$source_commit:$tree" 2>/dev/null || true)" == tree ]] ||
+        die "$tree/ is absent from source commit $source_commit"
+done
+[[ -z "$(git -C "$repository_root" status --porcelain=v1 --untracked-files=all -- src image)" ]] ||
+    die "src/ and image/ must be committed and clean before building"
+
+temporary_root="$(mktemp -d "$work_dir/.image-builder.XXXXXX")"
+publication_root="$(mktemp -d "$output_dir/.pi-router-publish.XXXXXX")"
+loop_device=
+root_mounted=0
+boot_mounted=0
+published=0
+
+cleanup() {
+    set +e
+    if (( boot_mounted )); then
+        sudo umount "$mount_root/boot/firmware"
+    fi
+    if (( root_mounted )); then
+        sudo umount "$mount_root"
+    fi
+    if [[ -n "$loop_device" ]]; then
+        sudo losetup --detach "$loop_device"
+    fi
+    sudo rm -rf --one-file-system -- "$temporary_root"
+    rm -rf -- "$publication_root"
+    if (( ! published )); then
+        [[ -z "${artifact:-}" ]] || rm -f -- "$artifact"
+        [[ -z "${sha:-}" ]] || rm -f -- "$sha"
+        [[ -z "${manifest:-}" ]] || rm -f -- "$manifest"
+        [[ -z "${imager_manifest:-}" ]] || rm -f -- "$imager_manifest"
+    fi
+}
+trap cleanup EXIT HUP INT TERM
+
+expected_source="$temporary_root/expected-source"
+supplied_source="$temporary_root/supplied-source"
+image_source="$temporary_root/image-source"
+mkdir -p -- "$expected_source" "$supplied_source" "$image_source"
+
+git -C "$repository_root" archive \
+    --format=tar \
+    --prefix="$release_name/" \
+    "$source_commit:src" |
+    tar -xf - -C "$expected_source"
+tar -xzf "$archive" --no-same-owner -C "$supplied_source"
+diff -qr -- "$expected_source/$release_name" "$supplied_source/$release_name" >/dev/null ||
+    die "release archive content does not match src/ at $source_commit"
+
+git -C "$repository_root" archive --format=tar "$source_commit:image" |
+    tar -xf - -C "$image_source"
+python3 "$image_source/validate-release-archive.py" "$archive" "$release_name"
+
+base_lock="$image_source/base-image.env"
+[[ -f "$base_lock" && ! -L "$base_lock" ]] ||
+    die "committed base-image.env is missing"
+# shellcheck disable=SC1090
+source "$base_lock"
+for name in \
+    BASE_IMAGE_RELEASE_DATE \
+    BASE_IMAGE_FILENAME \
+    BASE_IMAGE_URL \
+    BASE_IMAGE_COMPRESSED_SIZE \
+    BASE_IMAGE_COMPRESSED_SHA256 \
+    BASE_IMAGE_EXTRACTED_SIZE \
+    BASE_IMAGE_EXTRACTED_SHA256
+do
+    [[ -n "${!name:-}" ]] || die "base-image.env is missing $name"
+done
+[[ "$BASE_IMAGE_RELEASE_DATE" =~ ^20[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]] ||
+    die "invalid base image release date"
+[[ "$BASE_IMAGE_FILENAME" == "$BASE_IMAGE_RELEASE_DATE-raspios-trixie-arm64.img.xz" ]] ||
+    die "base image filename is not the pinned official Desktop image"
+[[ "$BASE_IMAGE_URL" == "https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-$BASE_IMAGE_RELEASE_DATE/$BASE_IMAGE_FILENAME" ]] ||
+    die "base image URL is not the exact official pinned URL"
+[[ "$BASE_IMAGE_COMPRESSED_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+    die "invalid compressed base-image SHA-256"
+[[ "$BASE_IMAGE_EXTRACTED_SHA256" =~ ^[0-9a-f]{64}$ ]] ||
+    die "invalid extracted base-image SHA-256"
+[[ "$BASE_IMAGE_COMPRESSED_SIZE" =~ ^[1-9][0-9]*$ ]] ||
+    die "invalid compressed base-image size"
+[[ "$BASE_IMAGE_EXTRACTED_SIZE" =~ ^[1-9][0-9]*$ ]] ||
+    die "invalid extracted base-image size"
+(( BASE_IMAGE_COMPRESSED_SIZE < BASE_IMAGE_EXTRACTED_SIZE )) ||
+    die "base image size relationship is invalid"
+
+if [[ "$profile" == release ]]; then
+    image_name="pi-router-v${version}-pi5-arm64"
+    certification_status=release
+    result_label=Release
+else
+    image_name="pi-router-v${version}-pi5-arm64-development"
+    certification_status=development
+    result_label=Development
+fi
+artifact="$output_dir/$image_name.img.xz"
+sha="$artifact.sha256"
+manifest="$output_dir/$image_name.manifest.txt"
+imager_manifest="$output_dir/$image_name.rpi-imager-manifest"
+for output_path in "$artifact" "$sha" "$manifest" "$imager_manifest"; do
+    [[ ! -e "$output_path" && ! -L "$output_path" ]] ||
+        die "refusing to overwrite existing output: $output_path"
+done
+output_lock_path="$output_dir/.$image_name.lock"
+exec {output_lock_fd}> "$output_lock_path"
+flock --nonblock "$output_lock_fd" ||
+    die "another build owns output $image_name"
+
+base_cache="$work_dir/base-image-cache"
+mkdir -p -- "$base_cache"
+base_archive="$base_cache/$BASE_IMAGE_FILENAME"
+if [[ -e "$base_archive" || -L "$base_archive" ]]; then
+    [[ -f "$base_archive" && ! -L "$base_archive" ]] ||
+        die "cached base image is not a regular file: $base_archive"
+else
+    base_download="$temporary_root/$BASE_IMAGE_FILENAME.download"
+    printf 'Downloading pinned official Raspberry Pi OS base image...\n'
+    curl \
+        --fail \
+        --location \
+        --proto '=https' \
+        --retry 3 \
+        --show-error \
+        --progress-bar \
+        --tlsv1.2 \
+        --output "$base_download" \
+        "$BASE_IMAGE_URL"
+    [[ "$(stat -c '%s' "$base_download")" == "$BASE_IMAGE_COMPRESSED_SIZE" ]] ||
+        die "downloaded base image has the wrong size"
+    [[ "$(sha256sum "$base_download" | awk '{print $1}')" == "$BASE_IMAGE_COMPRESSED_SHA256" ]] ||
+        die "downloaded base image has the wrong SHA-256"
+    chmod 0444 "$base_download"
+    mv -- "$base_download" "$base_archive"
+fi
+[[ "$(stat -c '%s' "$base_archive")" == "$BASE_IMAGE_COMPRESSED_SIZE" ]] ||
+    die "cached base image has the wrong size"
+[[ "$(sha256sum "$base_archive" | awk '{print $1}')" == "$BASE_IMAGE_COMPRESSED_SHA256" ]] ||
+    die "cached base image has the wrong SHA-256"
+
+raw_image="$temporary_root/base.img"
+printf 'Extracting and verifying the pinned base image...\n'
+xz --decompress --stdout "$base_archive" > "$raw_image"
+[[ "$(stat -c '%s' "$raw_image")" == "$BASE_IMAGE_EXTRACTED_SIZE" ]] ||
+    die "extracted base image has the wrong size"
+[[ "$(sha256sum "$raw_image" | awk '{print $1}')" == "$BASE_IMAGE_EXTRACTED_SHA256" ]] ||
+    die "extracted base image has the wrong SHA-256"
+chmod 0600 "$raw_image"
+
+mount_root="$temporary_root/rootfs"
+mkdir -p -- "$mount_root"
+loop_device="$(sudo losetup --find --show --partscan "$raw_image")"
+sudo udevadm settle
+partition_count="$(sudo lsblk -nrpo TYPE "$loop_device" | awk '$1 == "part" {count++} END {print count+0}')"
+[[ "$partition_count" == 2 ]] ||
+    die "pinned base image must contain exactly two partitions"
+boot_partition="${loop_device}p1"
+root_partition="${loop_device}p2"
+[[ -b "$boot_partition" && -b "$root_partition" ]] ||
+    die "expected boot and root partitions were not created"
+
+sudo mount -o rw "$root_partition" "$mount_root"
+root_mounted=1
+[[ -d "$mount_root/boot/firmware" ]] ||
+    die "base root filesystem lacks /boot/firmware"
+sudo mount -o rw "$boot_partition" "$mount_root/boot/firmware"
+boot_mounted=1
+
+printf 'Customizing Raspberry Pi OS offline...\n'
+sudo env -i \
+    HOME=/root \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LC_ALL=C.UTF-8 \
+    PI_ROUTER_VERSION="$version" \
+    PI_ROUTER_IMAGE_PROFILE="$profile" \
+    PI_ROUTER_RELEASE_ARCHIVE="$archive" \
+    PI_ROUTER_RELEASE_SHA256="$release_sha256" \
+    PI_ROUTER_SOURCE_COMMIT="$source_commit" \
+    PI_ROUTER_BASE_IMAGE_FILENAME="$BASE_IMAGE_FILENAME" \
+    PI_ROUTER_BASE_IMAGE_SHA256="$BASE_IMAGE_COMPRESSED_SHA256" \
+    bash "$image_source/customize-rootfs" "$mount_root"
+
+sudo sync
+sudo mount -o remount,ro "$mount_root/boot/firmware"
+sudo mount -o remount,ro "$mount_root"
+
+printf 'Auditing the customized root filesystem...\n'
+sudo env -i \
+    HOME=/root \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LC_ALL=C.UTF-8 \
+    bash "$image_source/tests/verify-rootfs" \
+    "$mount_root" \
+    "$profile" \
+    "$version" \
+    "$release_sha256" \
+    "$source_commit" \
+    "$BASE_IMAGE_FILENAME" \
+    "$BASE_IMAGE_COMPRESSED_SHA256"
+
+sudo umount "$mount_root/boot/firmware"
+boot_mounted=0
+sudo umount "$mount_root"
+root_mounted=0
+sudo losetup --detach "$loop_device"
+loop_device=
+
+read -r image_sha image_size _ < <(fingerprint_artifact "$raw_image")
+[[ "$image_size" == "$BASE_IMAGE_EXTRACTED_SIZE" ]] ||
+    die "customized image size changed unexpectedly"
+
+artifact_stage="$publication_root/$(basename -- "$artifact")"
+printf 'Compressing the customized image...\n'
+xz --threads=0 --compress --check=crc64 --stdout "$raw_image" > "$artifact_stage"
+xz --test "$artifact_stage"
+
+read -r compressed_sha compressed_size artifact_device artifact_inode artifact_mtime < <(
+    fingerprint_artifact "$artifact_stage"
+)
+github_release_asset_limit_bytes=2147483648
+(( compressed_size < github_release_asset_limit_bytes )) ||
+    die "compressed image must be smaller than GitHub Releases' 2 GiB limit"
+
+# The exported-image audit decompresses its own read-only copy.  Removing the
+# original here keeps the build below the disk budget of a standard GitHub
+# hosted runner without changing the image bytes.
+rm -f -- "$raw_image"
+
+printf 'Running the final read-only image audit...\n'
+mkdir -p -- "$temporary_root/audit"
+sudo env -i \
+    HOME=/root \
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LC_ALL=C.UTF-8 \
+    PI_ROUTER_AUDIT_TMPDIR="$temporary_root/audit" \
+    bash "$image_source/tests/verify-image" \
+    "$artifact_stage" \
+    "$profile" \
+    "$version" \
+    "$release_sha256" \
+    "$source_commit" \
+    "$BASE_IMAGE_FILENAME" \
+    "$BASE_IMAGE_COMPRESSED_SHA256"
+
+read -r compressed_sha_after compressed_size_after device_after inode_after mtime_after < <(
+    fingerprint_artifact "$artifact_stage"
+)
+[[ "$compressed_sha_after" == "$compressed_sha" &&
+   "$compressed_size_after" == "$compressed_size" &&
+   "$device_after" == "$artifact_device" &&
+   "$inode_after" == "$artifact_inode" &&
+   "$mtime_after" == "$artifact_mtime" ]] ||
+    die "compressed image changed during its read-only audit"
+
+sha_stage="$publication_root/$(basename -- "$sha")"
+manifest_stage="$publication_root/$(basename -- "$manifest")"
+imager_manifest_stage="$publication_root/$(basename -- "$imager_manifest")"
+printf '%s  %s\n' "$compressed_sha" "$(basename -- "$artifact")" > "$sha_stage"
+{
+    printf 'certification_status=%s\n' "$certification_status"
+    printf 'image_name=%s\n' "$image_name"
+    printf 'router_version=%s\n' "$version"
+    printf 'router_source_commit=%s\n' "$source_commit"
+    printf 'image_source_commit=%s\n' "$source_commit"
+    printf 'router_release_sha256=%s\n' "$release_sha256"
+    printf 'base_image_filename=%s\n' "$BASE_IMAGE_FILENAME"
+    printf 'base_image_sha256=%s\n' "$BASE_IMAGE_COMPRESSED_SHA256"
+    printf 'compressed_sha256=%s\n' "$compressed_sha"
+    printf 'compressed_size=%s\n' "$compressed_size"
+    printf 'github_release_asset_limit_bytes=%s\n' "$github_release_asset_limit_bytes"
+    printf 'image_sha256=%s\n' "$image_sha"
+    printf 'image_size=%s\n' "$image_size"
+} > "$manifest_stage"
+
+imager_location_args=(--published-image-path "$artifact")
+if [[ -n "${PI_ROUTER_IMAGER_IMAGE_URL:-}" ]]; then
+    imager_location_args=(--image-url "$PI_ROUTER_IMAGER_IMAGE_URL")
+fi
+
+python3 "$image_source/generate-imager-manifest.py" \
+    --image "$artifact_stage" \
+    "${imager_location_args[@]}" \
+    --output "$imager_manifest_stage" \
+    --version "$version" \
+    --profile "$profile" \
+    --release-date "$image_release_date" \
+    --compressed-size "$compressed_size" \
+    --compressed-sha256 "$compressed_sha" \
+    --extracted-size "$image_size" \
+    --extracted-sha256 "$image_sha"
+
+mv -- "$sha_stage" "$sha"
+mv -- "$manifest_stage" "$manifest"
+mv -- "$imager_manifest_stage" "$imager_manifest"
+mv -- "$artifact_stage" "$artifact"
+published=1
+
+printf '%s image built:\n  %s\n  %s\n  %s\n  %s\n' \
+    "$result_label" \
+    "$artifact" \
+    "$sha" \
+    "$manifest" \
+    "$imager_manifest"

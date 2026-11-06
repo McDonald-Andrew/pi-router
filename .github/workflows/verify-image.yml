@@ -1,0 +1,134 @@
+name: Verify Raspberry Pi Image Subsystem
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "image/**"
+      - "src/docs/image-installation-plan.md"
+      - "src/**"
+      - "windows-installer/**"
+      - ".github/workflows/build-image.yml"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/verify-image.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "image/**"
+      - "src/docs/image-installation-plan.md"
+      - "src/**"
+      - "windows-installer/**"
+      - ".github/workflows/build-image.yml"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/verify-image.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  static-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify image integration contract
+        run: sh image/tests/test-contract
+
+      - name: Check image shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          checked=0
+
+          while IFS= read -r -d '' file; do
+            first_line="$(head -n 1 "$file" || true)"
+
+            case "$first_line" in
+              '#!'*bash*)
+                bash -n "$file"
+                checked=$((checked + 1))
+                ;;
+              '#!'*'/sh'*)
+                sh -n "$file"
+                checked=$((checked + 1))
+                ;;
+              '#!'*'env sh'*)
+                sh -n "$file"
+                checked=$((checked + 1))
+                ;;
+              *)
+                case "$file" in
+                  *.sh)
+                    bash -n "$file"
+                    checked=$((checked + 1))
+                    ;;
+                esac
+                ;;
+            esac
+          done < <(find image -type f -print0)
+
+          if (( checked == 0 )); then
+            echo "No image shell scripts were found" >&2
+            exit 1
+          fi
+
+          echo "Checked $checked image shell script(s)"
+
+      - name: Install pinned static analyzers
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check --no-cache-dir ruff==0.9.10
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes shellcheck
+          fi
+
+      - name: Run shell static analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          checked=0
+          while IFS= read -r -d '' file; do
+            first_line="$(head -n 1 "$file" || true)"
+            case "$first_line" in
+              '#!'*bash*|'#!'*'/sh'*)
+                shellcheck --severity=error "$file"
+                checked=$((checked + 1))
+                ;;
+              *)
+                case "$file" in
+                  *.sh)
+                    shellcheck --severity=error --shell=bash "$file"
+                    checked=$((checked + 1))
+                    ;;
+                esac
+                ;;
+            esac
+          done < <(find image -type f -print0)
+
+          if (( checked == 0 )); then
+            echo "No image shell sources were found" >&2
+            exit 1
+          fi
+
+          echo "Statically checked $checked image shell source(s)"
+
+      - name: Run Python static analysis
+        run: python3 -m ruff check --output-format=github --select=E9,F63,F7,F82 image
+
+      - name: Check image Python syntax
+        run: python3 -m compileall -q image
+
+      - name: Check onboarding JavaScript syntax
+        run: node --check image/firstboot/onboarding-app.js
+
+      - name: Run image unit tests
+        run: python3 -m unittest discover -s image/tests -p "test_*.py"

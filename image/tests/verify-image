@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+die() {
+    printf 'verify-image: FAIL: %s\n' "$*" >&2
+    exit 1
+}
+
+[[ $# -eq 7 ]] ||
+    die "usage: verify-image IMAGE.img.xz PROFILE VERSION RELEASE_SHA256 SOURCE_COMMIT BASE_IMAGE_FILENAME BASE_IMAGE_SHA256"
+
+artifact=$1
+profile=$2
+version=$3
+release_sha=$4
+source_commit=$5
+base_filename=$6
+base_sha=$7
+
+case "$profile" in
+    development)
+        expected_name="pi-router-v${version}-pi5-arm64-development.img.xz"
+        ;;
+    release)
+        expected_name="pi-router-v${version}-pi5-arm64.img.xz"
+        ;;
+    *)
+        die "invalid profile: $profile"
+        ;;
+esac
+
+[[ $EUID -eq 0 ]] || die "root privileges are required"
+[[ -f "$artifact" && ! -L "$artifact" ]] ||
+    die "compressed image is missing or is not a regular file: $artifact"
+[[ "$(basename -- "$artifact")" == "$expected_name" ]] ||
+    die "artifact basename does not match profile: expected $expected_name"
+
+for command_name in findmnt install losetup lsblk mount sfdisk umount udevadm xz; do
+    command -v "$command_name" >/dev/null 2>&1 ||
+        die "required host command is unavailable: $command_name"
+done
+
+audit_parent="${PI_ROUTER_AUDIT_TMPDIR:-/var/tmp}"
+install -d -o root -g root -m 0700 "$audit_parent"
+temporary="$(mktemp -d "$audit_parent/verify-image.XXXXXX")"
+image_file="$temporary/image.img"
+mount_root="$temporary/root"
+loop_device=
+root_mounted=0
+boot_mounted=0
+
+cleanup() {
+    set +e
+    if (( boot_mounted )); then
+        umount "$mount_root/boot/firmware"
+    fi
+    if (( root_mounted )); then
+        umount "$mount_root"
+    fi
+    if [[ -n "$loop_device" ]]; then
+        losetup --detach "$loop_device"
+    fi
+    rm -rf -- "$temporary"
+}
+trap cleanup EXIT HUP INT TERM
+
+xz --decompress --stdout -- "$artifact" > "$image_file"
+loop_device="$(losetup --find --show --read-only --partscan "$image_file")"
+udevadm settle
+
+partition_table="$(sfdisk --dump "$loop_device")" ||
+    die "could not read the partition table"
+grep -Fxq 'label: dos' <<< "$partition_table" ||
+    die "expected an MBR/DOS partition table"
+
+mapfile -t all_partitions < <(
+    lsblk -nrpo NAME,TYPE "$loop_device" |
+        awk '$2 == "part" {print $1}'
+)
+mapfile -t boot_partitions < <(
+    lsblk -nrpo NAME,TYPE,FSTYPE "$loop_device" |
+        awk '$2 == "part" && $3 ~ /^(vfat|fat|fat16|fat32)$/ {print $1}'
+)
+mapfile -t root_partitions < <(
+    lsblk -nrpo NAME,TYPE,FSTYPE "$loop_device" |
+        awk '$2 == "part" && $3 == "ext4" {print $1}'
+)
+
+[[ ${#all_partitions[@]} -eq 2 ]] || die "expected exactly two partitions"
+[[ ${#boot_partitions[@]} -eq 1 ]] || die "expected exactly one FAT boot partition"
+[[ ${#root_partitions[@]} -eq 1 ]] || die "expected exactly one ext4 root partition"
+[[ "${all_partitions[0]}" == "${boot_partitions[0]}" ]] ||
+    die "expected the FAT boot partition first"
+[[ "${all_partitions[1]}" == "${root_partitions[0]}" ]] ||
+    die "expected the ext4 root partition second"
+
+for partition in "${boot_partitions[0]}" "${root_partitions[0]}"; do
+    [[ -b "$partition" ]] || die "partition device did not appear: $partition"
+    [[ -z "$(findmnt -rn -S "$partition" -o TARGET)" ]] ||
+        die "partition is unexpectedly mounted: $partition"
+done
+
+install -d -o root -g root -m 0755 "$mount_root"
+mount -o ro,noload "${root_partitions[0]}" "$mount_root"
+root_mounted=1
+
+[[ -d "$mount_root/boot/firmware" ]] ||
+    die "root filesystem does not contain /boot/firmware mount point"
+mount -o ro "${boot_partitions[0]}" "$mount_root/boot/firmware"
+boot_mounted=1
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+bash "$script_dir/verify-rootfs" \
+    "$mount_root" \
+    "$profile" \
+    "$version" \
+    "$release_sha" \
+    "$source_commit" \
+    "$base_filename" \
+    "$base_sha"
+
+printf 'verify-image: PASS: read-only exported artifact audit complete\n'

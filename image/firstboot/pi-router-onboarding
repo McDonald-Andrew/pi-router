@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+exec /usr/bin/python3 -I -B \
+    /usr/local/lib/pi-router-image/pi_router_onboarding_frontend.py
