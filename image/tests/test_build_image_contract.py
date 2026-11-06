@@ -12,7 +12,7 @@ class BuildImageContractTests(unittest.TestCase):
         return (IMAGE_DIR / relative_path).read_text(encoding="utf-8")
 
     def test_builder_has_only_development_and_release_profiles(self) -> None:
-        builder = self.read("build-image")
+        builder = self.read("build")
 
         self.assertIn("development|release", builder)
         self.assertIn("profile=${4:-development}", builder)
@@ -23,7 +23,7 @@ class BuildImageContractTests(unittest.TestCase):
     def test_release_profile_uses_the_final_name_without_claiming_certification(
         self,
     ) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn('if [[ "$profile" == release ]]', source)
         self.assertIn('image_name="pi-router-v${version}-pi5-arm64"', source)
@@ -31,7 +31,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn("certification_status=certified", source)
 
     def test_development_name_cannot_be_mistaken_for_a_release(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn(
             'image_name="pi-router-v${version}-pi5-arm64-development"', source
@@ -63,7 +63,7 @@ class BuildImageContractTests(unittest.TestCase):
         sources = "\n".join(
             self.read(path)
             for path in (
-                "build-image",
+                "build",
                 "customize-rootfs",
                 "tests/verify-rootfs",
                 "tests/verify-image",
@@ -76,7 +76,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotRegex(sources, r"(?m)^\s*(?:sudo\s+)?chroot\s+")
 
     def test_one_commit_supplies_router_and_image_sources(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn(
             '[[ "$(git -C "$repository_root" rev-parse HEAD)" == "$source_commit" ]]',
@@ -92,7 +92,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn('cp -a -- "$script_dir/."', source)
 
     def test_builder_verifies_both_forms_of_the_pinned_base_image(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         for value in (
             "BASE_IMAGE_FILENAME",
@@ -110,7 +110,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotRegex(source, r"(?i)(?:resolve|download).{0,20}latest")
 
     def test_offline_customizer_and_static_audits_are_the_only_image_steps(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn("customize-rootfs", source)
         self.assertIn("tests/verify-rootfs", source)
@@ -174,7 +174,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn("KbdInteractiveAuthentication", source)
 
     def test_github_release_limit_is_fail_closed_and_recorded(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn("github_release_asset_limit_bytes=2147483648", source)
         self.assertIn(
@@ -185,7 +185,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn("image_size=%s", source)
 
     def test_artifact_is_locked_audited_and_published_atomically(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn("fingerprint_artifact()", source)
         self.assertIn('getattr(os, "O_NOFOLLOW", 0)', source)
@@ -194,14 +194,14 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertRegex(source, r"\bmv\s+--\s+")
 
     def test_builder_releases_the_first_raw_copy_before_export_audit(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         release = source.index('rm -f -- "$raw_image"')
         final_audit = source.index("Running the final read-only image audit")
         self.assertLess(release, final_audit)
 
     def test_builder_emits_the_validated_local_imager_manifest(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn('imager_manifest="$output_dir/$image_name.rpi-imager-manifest"', source)
         self.assertIn('python3 "$image_source/generate-imager-manifest.py"', source)
@@ -222,7 +222,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn("validate_approved_differences", generator)
 
     def test_builder_packages_only_committed_router_source(self) -> None:
-        source = self.read("build-image")
+        source = self.read("build")
 
         self.assertIn("VERSION OUTPUT_DIR WORK_DIR [PROFILE]", source)
         self.assertIn("src/ and image/ must be committed and clean", source)

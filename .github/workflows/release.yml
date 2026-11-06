@@ -127,7 +127,7 @@ jobs:
           image_name="pi-router-v${VERSION}-pi5-arm64"
           export PI_ROUTER_IMAGER_IMAGE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${image_name}.img.xz"
 
-          bash image/build-image "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release
+          bash image/build "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release
 
           gh release upload "$RELEASE_TAG" \
             "$OUTPUT_DIR/$image_name.img.xz" \

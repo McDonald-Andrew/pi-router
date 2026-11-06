@@ -31,7 +31,7 @@ derived from the pinned official Desktop entry.
 From a committed, clean checkout on Debian or Ubuntu Linux:
 
 ```bash
-bash image/build-image \
+bash image/build \
     0.1.0 \
     /path/to/output \
     /path/to/linux-work
@@ -41,7 +41,7 @@ The default profile is `development`. To create the immutable bytes that will
 enter hardware certification:
 
 ```bash
-bash image/build-image \
+bash image/build \
     0.1.0 \
     /path/to/output \
     /path/to/linux-work \
@@ -78,7 +78,7 @@ The manually dispatched **Pi Router Release** workflow in
 
 1. creates an unpublished draft prerelease for the requested version;
 2. builds and audits the `release` image with this same
-   `image/build-image` command;
+   `image/build` command;
 3. uploads the image, checksum, provenance manifest, and Imager manifest
    directly as GitHub Release assets rather than storing a duplicate large
    Actions artifact;

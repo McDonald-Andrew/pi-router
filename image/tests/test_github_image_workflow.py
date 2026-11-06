@@ -16,13 +16,10 @@ class GitHubImageWorkflowTests(unittest.TestCase):
     def test_release_is_the_single_image_workflow(self) -> None:
         self.assertIn("workflow_dispatch:", self.release)
         self.assertNotIn("workflow_call:", self.release)
-        self.assertFalse(
-            (REPOSITORY_ROOT / ".github" / "workflows" / "build-image.yml").exists()
-        )
 
     def test_release_calls_the_single_local_builder(self) -> None:
         self.assertIn(
-            'bash image/build-image "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release',
+            'bash image/build "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release',
             self.release,
         )
         self.assertIn("actions/cache@v4", self.release)

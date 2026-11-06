@@ -5,7 +5,7 @@ set -Eeuo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  bash image/build-image VERSION OUTPUT_DIR WORK_DIR [PROFILE]
+  bash image/build VERSION OUTPUT_DIR WORK_DIR [PROFILE]
 
 PROFILE defaults to development. Valid profiles are development and release.
 
@@ -19,7 +19,7 @@ EOF
 }
 
 die() {
-    printf 'build-image: ERROR: %s\n' "$*" >&2
+    printf 'build: ERROR: %s\n' "$*" >&2
     exit 1
 }
 
