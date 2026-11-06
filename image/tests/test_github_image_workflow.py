@@ -64,7 +64,10 @@ class GitHubImageWorkflowTests(unittest.TestCase):
         self.assertIn("gh release edit $env:RELEASE_TAG --draft=false", self.release)
         self.assertIn("-not $published.isPrerelease", self.release)
         self.assertIn("cleanup_failed_draft:", self.release)
-        self.assertIn("--cleanup-tag --yes", self.release)
+        self.assertIn('gh release delete "$RELEASE_TAG" --yes', self.release)
+        self.assertIn("git/matching-refs/tags/$RELEASE_TAG", self.release)
+        self.assertIn("git/refs/tags/$RELEASE_TAG", self.release)
+        self.assertNotIn("--cleanup-tag", self.release)
 
     def test_release_requires_the_complete_nine_asset_set(self) -> None:
         for name in (

@@ -145,7 +145,13 @@ class BuildImageContractTests(unittest.TestCase):
         ):
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, source)
-        self.assertIn("systemd-sysusers --root=", source)
+        self.assertIn(
+            'systemd-sysusers --root="$root" pi-router-onboarding.conf', source
+        )
+        self.assertIn("for unit in cups.service cups.socket cups.path", source)
+        self.assertIn(
+            'ln -sfnT /dev/null "$root/etc/systemd/system/$unit"', source
+        )
         self.assertIn("systemctl --root=", source)
         self.assertIn("enable pi-router-firstboot.timer", source)
 

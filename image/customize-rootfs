@@ -164,7 +164,7 @@ install -D -o root -g root -m 0644 \
     "$firstboot_source/onboarding-styles.css" \
     "$root/usr/local/share/pi-router-onboarding/styles.css"
 
-systemd-sysusers --root="$root"
+systemd-sysusers --root="$root" pi-router-onboarding.conf
 
 printf 'pi-router\n' > "$root/etc/hostname"
 if grep -Eq '^127\.0\.1\.1[[:space:]]' "$root/etc/hosts"; then
@@ -194,6 +194,12 @@ unsafe_units=(
 )
 for unit in "${unsafe_units[@]}"; do
     systemctl --root="$root" disable "$unit" >/dev/null 2>&1 || true
+done
+# The host systemctl can be older than the Raspberry Pi OS unit files and may
+# fail to remove pre-existing CUPS enablement. These appliance images never use
+# printing, so mask the CUPS activation units directly and offline.
+for unit in cups.service cups.socket cups.path; do
+    ln -sfnT /dev/null "$root/etc/systemd/system/$unit"
 done
 systemctl --root="$root" enable pi-router-firstboot.timer >/dev/null
 
