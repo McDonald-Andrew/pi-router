@@ -26,6 +26,7 @@ Ensure an ethernet cable is connected from your machine to the Pi 5's built-in e
 
 # Installing `pi-router`
 
+- Raspberry Pi images are built by the manually dispatched **Pi Router Release** GitHub Actions workflow. Follow [the image user guide](image/USER-GUIDE.md) to write and test one with Raspberry Pi Imager.
 - If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
 - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
 - To build `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `pi-router-vX.Y.Z.tar.gz`](#pack--repack-pi-router-vxyz-targz) below.
