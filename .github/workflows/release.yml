@@ -69,13 +69,71 @@ jobs:
 
   image:
     needs: prepare_release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
     permissions:
       contents: write
-    uses: ./.github/workflows/build-image.yml
-    with:
-      version: ${{ inputs.version }}
-      profile: release
-      release_tag: ${{ needs.prepare_release.outputs.release_tag }}
+    env:
+      VERSION: ${{ inputs.version }}
+      RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
+      OUTPUT_DIR: ${{ github.workspace }}/image-output
+      WORK_DIR: ${{ github.workspace }}/.pi-router-image-work
+
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install image-build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends --yes \
+            curl fdisk git kmod mount python3 python3-jsonschema \
+            systemd udev util-linux xz-utils
+
+      - name: Restore verified official image cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.pi-router-image-work/base-image-cache
+          key: pi-router-base-${{ runner.os }}-${{ hashFiles('image/base-image.env') }}
+
+      - name: Build and upload image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p -- "$OUTPUT_DIR" "$WORK_DIR"
+
+          minimum_bytes=$((11 * 1024 * 1024 * 1024))
+          available_bytes=$(df --output=avail -B1 "$WORK_DIR" | tail -n 1 | tr -d '[:space:]')
+          (( available_bytes >= minimum_bytes )) || {
+            echo "Image build requires at least 11 GiB free; runner has $available_bytes bytes" >&2
+            exit 1
+          }
+
+          if [[ ! -c /dev/loop-control ]]; then
+            sudo modprobe loop
+          fi
+          [[ -c /dev/loop-control ]] || {
+            echo "GitHub runner does not provide loop-device support" >&2
+            exit 1
+          }
+          sudo losetup --find >/dev/null
+
+          image_name="pi-router-v${VERSION}-pi5-arm64"
+          export PI_ROUTER_IMAGER_IMAGE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/${image_name}.img.xz"
+
+          bash image/build-local "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release
+
+          gh release upload "$RELEASE_TAG" \
+            "$OUTPUT_DIR/$image_name.img.xz" \
+            "$OUTPUT_DIR/$image_name.img.xz.sha256" \
+            "$OUTPUT_DIR/$image_name.manifest.txt" \
+            "$OUTPUT_DIR/$image_name.rpi-imager-manifest"
 
   publish:
     needs:

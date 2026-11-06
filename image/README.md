@@ -77,14 +77,13 @@ The manually dispatched **Pi Router Release** workflow in
 `.github/workflows/release.yml` is the single GitHub Actions entrypoint. It:
 
 1. creates an unpublished draft prerelease for the requested version;
-2. calls the reusable `.github/workflows/build-image.yml` workflow;
-3. builds and audits the `release` image with this same
+2. builds and audits the `release` image with this same
    `image/build-local` command;
-4. uploads the image, checksum, provenance manifest, and Imager manifest
+3. uploads the image, checksum, provenance manifest, and Imager manifest
    directly as GitHub Release assets rather than storing a duplicate large
    Actions artifact;
-5. builds and uploads the existing router archive and Windows installer; and
-6. publishes only after the exact nine-file prerelease asset set is present.
+4. builds and uploads the existing router archive and Windows installer; and
+5. publishes only after the exact nine-file prerelease asset set is present.
 
 The generated Imager manifest points at the exact `.img.xz` asset on that
 GitHub prerelease. The prerelease remains explicitly uncertified. Test those

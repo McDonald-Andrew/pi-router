@@ -8,7 +8,6 @@ on:
       - "src/docs/image-installation-plan.md"
       - "src/**"
       - "windows-installer/**"
-      - ".github/workflows/build-image.yml"
       - ".github/workflows/release.yml"
       - ".github/workflows/verify-image.yml"
   push:
@@ -19,7 +18,6 @@ on:
       - "src/docs/image-installation-plan.md"
       - "src/**"
       - "windows-installer/**"
-      - ".github/workflows/build-image.yml"
       - ".github/workflows/release.yml"
       - ".github/workflows/verify-image.yml"
 
