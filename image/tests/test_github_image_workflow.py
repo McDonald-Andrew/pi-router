@@ -54,6 +54,7 @@ class GitHubImageWorkflowTests(unittest.TestCase):
                 self.assertIn(f"$OUTPUT_DIR/$image_name{suffix}", self.release)
         self.assertIn('gh release upload "$RELEASE_TAG"', self.release)
         self.assertNotIn("actions/upload-artifact", self.release)
+        self.assertNotIn('$OUTPUT_DIR/*', self.release)
         self.assertNotIn("--clobber", self.release)
 
     def test_release_stays_a_prerelease_until_hardware_certification(self) -> None:

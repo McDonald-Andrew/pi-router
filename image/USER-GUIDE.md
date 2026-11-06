@@ -40,7 +40,7 @@ bash image/build \
 
 The checkout must have no uncommitted changes under `src/` or `image/`. Keep `pi-router-image-work` on WSL's native Linux filesystem with about 16 GiB free; do not place it under `/mnt/c`. The output directory may remain inside the Windows checkout so Raspberry Pi Imager can access the completed files.
 
-The first build downloads and verifies the pinned Raspberry Pi OS image. Later builds reuse that download from `pi-router-image-work`. A complete build customizes the image, compresses it, and performs the final read-only audit. Successful completion produces:
+The first build downloads and verifies the pinned Raspberry Pi OS image. Later builds reuse that download from `pi-router-image-work`. A complete build customizes the image, compresses it, performs the final read-only audit, and removes its temporary output lock. Successful completion produces only these four files:
 
 ```text
 image-output/pi-router-vX.Y.Z-pi5-arm64.img.xz

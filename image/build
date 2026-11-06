@@ -187,6 +187,8 @@ cleanup() {
         [[ -z "${sha:-}" ]] || rm -f -- "$sha"
         [[ -z "${manifest:-}" ]] || rm -f -- "$manifest"
         [[ -z "${imager_manifest:-}" ]] || rm -f -- "$imager_manifest"
+    elif [[ -n "${output_lock_path:-}" ]]; then
+        rm -f -- "$output_lock_path"
     fi
 }
 trap cleanup EXIT HUP INT TERM

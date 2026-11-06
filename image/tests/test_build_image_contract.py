@@ -190,6 +190,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn("fingerprint_artifact()", source)
         self.assertIn('getattr(os, "O_NOFOLLOW", 0)', source)
         self.assertIn("flock --nonblock", source)
+        self.assertIn('rm -f -- "$output_lock_path"', source)
         self.assertIn("final read-only image audit", source)
         self.assertRegex(source, r"\bmv\s+--\s+")
 
