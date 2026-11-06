@@ -20,10 +20,18 @@ devices.conf
 *~
 *.swp
 
+# Python
+*venv
+__pycache__/
+*.py[cod]
+
 # Archives
 *.tar
 *.tar.gz
 *.tgz
+
+# Local image build output
+/image-output/
 
 *.sha256.txt
 
