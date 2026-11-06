@@ -1,10 +1,5 @@
 # Raspberry Pi Image User Guide
 
-Do not use an image whose checksum does not match or whose provenance and
-Imager manifests do not identify the expected router version.
-
-Current engineering builds use the `development` profile, whose filename ends in `-development.img.xz`, or the `release` profile, which uses the intended final filename but remains explicitly uncertified in its manifest. When testing one, use its exact builder-produced name in the commands below; never rename a development artifact to look certified.
-
 ## Build the image yourself
 
 You can build the same four-file image set from a committed, clean checkout instead of downloading a published release. The builder requires Debian or Ubuntu Linux. On Windows, run it through Ubuntu under WSL.
