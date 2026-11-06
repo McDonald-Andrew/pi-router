@@ -13,15 +13,12 @@ class BuildImageContractTests(unittest.TestCase):
 
     def test_builder_has_only_development_and_release_profiles(self) -> None:
         builder = self.read("build-image")
-        wrapper = self.read("build-local")
 
         self.assertIn("development|release", builder)
-        self.assertIn("development|release", wrapper)
-        self.assertIn("profile=${4:-development}", wrapper)
+        self.assertIn("profile=${4:-development}", builder)
         for retired in ("proof", "preload", "provision"):
             with self.subTest(profile=retired):
                 self.assertNotRegex(builder, rf"(^|[| ]){retired}([| )]|$)")
-                self.assertNotRegex(wrapper, rf"(^|[| ]){retired}([| )]|$)")
 
     def test_release_profile_uses_the_final_name_without_claiming_certification(
         self,
@@ -224,14 +221,15 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn('["pi5-64bit"]', generator)
         self.assertIn("validate_approved_differences", generator)
 
-    def test_local_wrapper_packages_only_committed_router_source(self) -> None:
-        source = self.read("build-local")
+    def test_builder_packages_only_committed_router_source(self) -> None:
+        source = self.read("build-image")
 
         self.assertIn("VERSION OUTPUT_DIR WORK_DIR [PROFILE]", source)
         self.assertIn("src/ and image/ must be committed and clean", source)
         self.assertIn("--format=tar.gz", source)
         self.assertIn('"$source_commit:src"', source)
-        self.assertIn('bash "$script_dir/build-image"', source)
+        self.assertIn('archive="$temporary_root/$release_name.tar.gz"', source)
+        self.assertNotIn("ARCHIVE CHECKSUM", source)
 
 
 if __name__ == "__main__":

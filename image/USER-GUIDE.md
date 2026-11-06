@@ -31,7 +31,7 @@ df -h "$HOME"
 sudo modprobe loop 2>/dev/null || true
 sudo losetup --find
 
-bash image/build-local \
+bash image/build-image \
     X.Y.Z \
     "$PWD/image-output" \
     "$HOME/pi-router-image-work" \

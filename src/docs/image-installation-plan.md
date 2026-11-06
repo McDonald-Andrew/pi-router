@@ -236,8 +236,8 @@ setup's installation logic or pre-generated machine-specific configuration.
 
 ### P10 - Produce release artifacts
 
-- [x] Provide one local command that packages committed `src/` and invokes the
-  committed image builder.
+- [x] Provide one image command that packages committed `src/` and builds from
+  that exact source commit.
 - [x] Support only the clear `development` and `release` profiles.
 - [x] Cache the verified official base while keeping each customization build
   isolated.

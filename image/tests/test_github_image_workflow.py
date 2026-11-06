@@ -22,7 +22,7 @@ class GitHubImageWorkflowTests(unittest.TestCase):
 
     def test_release_calls_the_single_local_builder(self) -> None:
         self.assertIn(
-            'bash image/build-local "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release',
+            'bash image/build-image "$VERSION" "$OUTPUT_DIR" "$WORK_DIR" release',
             self.release,
         )
         self.assertIn("actions/cache@v4", self.release)
