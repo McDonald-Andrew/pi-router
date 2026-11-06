@@ -83,6 +83,32 @@ class GitHubImageWorkflowTests(unittest.TestCase):
                 self.assertIn(name, self.release)
         self.assertIn("Compare-Object $expected $actual", self.release)
 
+    def test_windows_assets_are_built_separately_before_publish(self) -> None:
+        windows_job = self.release.index("\n  windows:\n")
+        publish_job = self.release.index("\n  publish:\n")
+        cleanup_job = self.release.index("\n  cleanup_failed_draft:\n")
+
+        windows = self.release[windows_job:publish_job]
+        publish = self.release[publish_job:cleanup_job]
+
+        self.assertIn("Pack router source and build Windows installer", windows)
+        self.assertIn("Upload existing release assets", windows)
+        self.assertNotIn("Verify and publish prerelease", windows)
+        self.assertIn("Verify and publish prerelease", publish)
+        self.assertNotIn("Pack router source and build Windows installer", publish)
+        self.assertIn("      - image\n      - windows", publish)
+        self.assertIn("needs.windows.result != 'success'", self.release)
+
+        for display_name in (
+            "Prepare release",
+            "Build image assets",
+            "Build Windows assets",
+            "Publish release",
+            "Clean up failed release",
+        ):
+            with self.subTest(display_name=display_name):
+                self.assertIn(f"name: {display_name}", self.release)
+
 
 if __name__ == "__main__":
     unittest.main()

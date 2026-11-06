@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   prepare_release:
+    name: Prepare release
     runs-on: ubuntu-24.04
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
@@ -68,6 +69,7 @@ jobs:
           printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
 
   image:
+    name: Build image assets
     needs: prepare_release
     runs-on: ubuntu-24.04
     timeout-minutes: 120
@@ -135,10 +137,9 @@ jobs:
             "$OUTPUT_DIR/$image_name.manifest.txt" \
             "$OUTPUT_DIR/$image_name.rpi-imager-manifest"
 
-  publish:
-    needs:
-      - prepare_release
-      - image
+  windows:
+    name: Build Windows assets
+    needs: prepare_release
     runs-on: windows-latest
 
     steps:
@@ -203,6 +204,15 @@ jobs:
               throw "release asset upload exited with code $LASTEXITCODE"
           }
 
+  publish:
+    name: Publish release
+    needs:
+      - prepare_release
+      - image
+      - windows
+    runs-on: windows-latest
+
+    steps:
       - name: Verify and publish prerelease
         shell: powershell
         env:
@@ -245,11 +255,13 @@ jobs:
           }
 
   cleanup_failed_draft:
+    name: Clean up failed release
     needs:
       - prepare_release
       - image
+      - windows
       - publish
-    if: ${{ always() && needs.prepare_release.result == 'success' && (needs.image.result != 'success' || needs.publish.result != 'success') }}
+    if: ${{ always() && needs.prepare_release.result == 'success' && (needs.image.result != 'success' || needs.windows.result != 'success' || needs.publish.result != 'success') }}
     runs-on: ubuntu-24.04
 
     steps:
