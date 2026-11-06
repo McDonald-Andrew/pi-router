@@ -26,9 +26,7 @@ class CertificationReceiptTests(unittest.TestCase):
         self.manifest = self.root / f"{self.image_name}.manifest.txt"
         self.receipt = self.root / "certification-receipt.txt"
         self.router_commit = "1" * 40
-        self.base_image_filename = (
-            "2026-10-06-raspios-trixie-arm64.img.xz"
-        )
+        self.base_image_filename = "2026-10-06-raspios-desktop-arm64.img.xz"
         self.base_image_sha256 = "a" * 64
 
         self.extracted = (b"pi-router-image-fixture\0" * 4096) + b"end"

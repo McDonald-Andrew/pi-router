@@ -18,7 +18,6 @@ Tested hardware:
 Tested software baseline:
 
 - Raspberry Pi OS Desktop, 64-bit
-- Debian 13 / trixie
 - NetworkManager
 - LightDM
 - `rpd-labwc` desktop session

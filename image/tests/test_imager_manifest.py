@@ -40,7 +40,10 @@ class PinnedOfficialInputTests(unittest.TestCase):
         entry = json.loads(OFFICIAL_ENTRY.read_text(encoding="utf-8"))
         lock = base_lock()
 
-        self.assertEqual(Path(urlparse(entry["url"]).path).name, lock["BASE_IMAGE_FILENAME"])
+        self.assertEqual(
+            Path(urlparse(entry["url"]).path).name,
+            Path(urlparse(lock["BASE_IMAGE_URL"]).path).name,
+        )
         self.assertEqual(entry["release_date"], lock["BASE_IMAGE_RELEASE_DATE"])
         self.assertEqual(entry["extract_size"], int(lock["BASE_IMAGE_EXTRACTED_SIZE"]))
         self.assertEqual(entry["extract_sha256"], lock["BASE_IMAGE_EXTRACTED_SHA256"])

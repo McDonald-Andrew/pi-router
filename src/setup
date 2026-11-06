@@ -1309,7 +1309,6 @@ load_proton_repository_config() {
 
 phase_platform() {
     local os_id
-    local os_codename
     local architecture
     local machine
     local model
@@ -1341,19 +1340,11 @@ phase_platform() {
         printf '%s' "${ID:-}"
     )"
 
-    os_codename="$(
-        . /etc/os-release
-        printf '%s' "${VERSION_CODENAME:-}"
-    )"
-
     architecture="$(dpkg --print-architecture)"
     machine="$(uname -m)"
 
     [[ "$os_id" == "debian" ]] ||
-        die "tested appliance requires Debian-based Raspberry Pi OS; found ID=$os_id"
-
-    [[ "$os_codename" == "trixie" ]] ||
-        die "tested appliance requires Debian 13/trixie; found $os_codename"
+        die "tested appliance requires Raspberry Pi OS; found ID=$os_id"
 
     [[ "$architecture" == "arm64" ]] ||
         die "tested appliance requires dpkg architecture arm64; found $architecture"
@@ -1361,7 +1352,7 @@ phase_platform() {
     [[ "$machine" == "aarch64" ]] ||
         die "tested appliance requires aarch64 kernel; found $machine"
 
-    note "OS: Debian $os_codename"
+    note "OS: Raspberry Pi OS"
     note "architecture: $architecture / $machine"
 
     if [[ -r /proc/device-tree/model ]]; then

@@ -107,6 +107,8 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn("base-image-cache", source)
         self.assertIn("curl", source)
         self.assertIn("sha256sum", source)
+        self.assertIn('BASE_IMAGE_FILENAME="${BASE_IMAGE_URL##*/}"', source)
+        self.assertIn("invalid base image filename", source)
         self.assertNotRegex(source, r"(?i)(?:resolve|download).{0,20}latest")
 
     def test_offline_customizer_and_static_audits_are_the_only_image_steps(self) -> None:

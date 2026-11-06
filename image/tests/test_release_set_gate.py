@@ -27,9 +27,7 @@ class ReleaseSetGateTests(unittest.TestCase):
         self.release_name = f"pi-router-v{self.version}"
         self.image_stem = f"{self.release_name}-pi5-arm64"
         self.router_commit = "1" * 40
-        self.base_image_filename = (
-            "2026-10-06-raspios-trixie-arm64.img.xz"
-        )
+        self.base_image_filename = "2026-10-06-raspios-desktop-arm64.img.xz"
         self.base_image_sha256 = "a" * 64
 
         self.archive = self.root / f"{self.release_name}.tar.gz"

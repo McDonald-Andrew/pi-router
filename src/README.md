@@ -24,7 +24,6 @@ Developed and tested on:
 
 - Raspberry Pi 5
 - Raspberry Pi OS Desktop, 64-bit
-- Debian 13 / trixie
 - NetworkManager
 - LightDM
 - `rpd-labwc`

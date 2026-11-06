@@ -30,7 +30,6 @@ class BaseImageLockTests(unittest.TestCase):
             set(values),
             {
                 "BASE_IMAGE_RELEASE_DATE",
-                "BASE_IMAGE_FILENAME",
                 "BASE_IMAGE_URL",
                 "BASE_IMAGE_COMPRESSED_SIZE",
                 "BASE_IMAGE_COMPRESSED_SHA256",
@@ -42,7 +41,7 @@ class BaseImageLockTests(unittest.TestCase):
         parsed = urlparse(values["BASE_IMAGE_URL"])
         self.assertEqual(parsed.scheme, "https")
         self.assertEqual(parsed.netloc, "downloads.raspberrypi.com")
-        self.assertEqual(Path(parsed.path).name, values["BASE_IMAGE_FILENAME"])
+        self.assertRegex(Path(parsed.path).name, r"^[0-9A-Za-z][0-9A-Za-z._-]*\.img\.xz$")
 
         for key in (
             "BASE_IMAGE_COMPRESSED_SHA256",
