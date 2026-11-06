@@ -194,6 +194,10 @@ unsafe_units=(
 )
 for unit in "${unsafe_units[@]}"; do
     systemctl --root="$root" disable "$unit" >/dev/null 2>&1 || true
+    # Older host systemctl versions can fail to parse newer target unit files.
+    # Remove any remaining enablement links directly from the offline image.
+    find "$root/etc/systemd/system" -xdev -type l \
+        \( -lname "$unit" -o -lname "*/$unit" \) -delete
 done
 # The host systemctl can be older than the Raspberry Pi OS unit files and may
 # fail to remove pre-existing CUPS enablement. These appliance images never use

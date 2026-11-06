@@ -152,6 +152,9 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn(
             'ln -sfnT /dev/null "$root/etc/systemd/system/$unit"', source
         )
+        self.assertIn(
+            '\\( -lname "$unit" -o -lname "*/$unit" \\) -delete', source
+        )
         self.assertIn("systemctl --root=", source)
         self.assertIn("enable pi-router-firstboot.timer", source)
 
