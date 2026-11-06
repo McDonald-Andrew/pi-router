@@ -97,6 +97,9 @@ class GitHubImageWorkflowTests(unittest.TestCase):
         self.assertIn("Verify and publish prerelease", publish)
         self.assertNotIn("Pack router source and build Windows installer", publish)
         self.assertIn("      - image\n      - windows", publish)
+        self.assertIn("GH_REPO: ${{ github.repository }}", publish)
+        self.assertIn("reading draft release exited with code", publish)
+        self.assertIn("reading published release exited with code", publish)
         self.assertIn("needs.windows.result != 'success'", self.release)
 
         for display_name in (

@@ -217,6 +217,7 @@ jobs:
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           VERSION: ${{ inputs.version }}
           RELEASE_TAG: ${{ needs.prepare_release.outputs.release_tag }}
         run: |
@@ -235,7 +236,11 @@ jobs:
               "$imageName.rpi-imager-manifest"
           ) | Sort-Object
 
-          $release = gh release view $env:RELEASE_TAG --json assets,isDraft,isPrerelease | ConvertFrom-Json
+          $releaseJson = gh release view $env:RELEASE_TAG --json assets,isDraft,isPrerelease
+          if ($LASTEXITCODE -ne 0) {
+              throw "reading draft release exited with code $LASTEXITCODE"
+          }
+          $release = $releaseJson | ConvertFrom-Json
           if (-not $release.isDraft -or -not $release.isPrerelease) {
               throw 'Release lost its draft prerelease state before publication.'
           }
@@ -249,7 +254,11 @@ jobs:
               throw "publishing prerelease exited with code $LASTEXITCODE"
           }
 
-          $published = gh release view $env:RELEASE_TAG --json isDraft,isPrerelease | ConvertFrom-Json
+          $publishedJson = gh release view $env:RELEASE_TAG --json isDraft,isPrerelease
+          if ($LASTEXITCODE -ne 0) {
+              throw "reading published release exited with code $LASTEXITCODE"
+          }
+          $published = $publishedJson | ConvertFrom-Json
           if ($published.isDraft -or -not $published.isPrerelease) {
               throw 'Release was not published as a prerelease.'
           }
