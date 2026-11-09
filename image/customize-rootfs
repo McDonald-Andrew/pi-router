@@ -28,8 +28,10 @@ do
 done
 
 for command_name in \
+    chmod \
     chown \
     dpkg-query \
+    find \
     install \
     sha256sum \
     systemctl \
@@ -72,8 +74,16 @@ tar -xzf "$PI_ROUTER_RELEASE_ARCHIVE" --no-same-owner \
     -C "$root/opt/pi-router/releases"
 [[ -f "$release_path/setup" && ! -L "$release_path/setup" ]] ||
     die "versioned setup executable is missing"
+repository_metadata="$release_path/config/proton-repository.conf"
+[[ -f "$repository_metadata" && ! -L "$repository_metadata" ]] ||
+    die "versioned Proton repository metadata is missing"
 chown -R root:root "$release_path"
+# Git archives can carry 0664 files and 0775 directories. Remove writable
+# group/other bits from the complete release tree before applying the few
+# exact modes required by first boot.
+find "$release_path" -xdev \( -type f -o -type d \) -exec chmod go-w {} +
 chmod 0755 "$release_path/setup"
+chmod 0644 "$repository_metadata"
 ln -s "releases/$release_name" "$root/opt/pi-router/current"
 
 # The PCIe NIC must be visible on the first hardware boot. Run setup's public

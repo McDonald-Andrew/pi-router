@@ -158,6 +158,35 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn("systemctl --root=", source)
         self.assertIn("enable pi-router-firstboot.timer", source)
 
+    def test_release_permissions_are_normalized_and_audited(
+        self,
+    ) -> None:
+        customizer = self.read("customize-rootfs")
+        rootfs_audit = self.read("tests/verify-rootfs")
+
+        assignment = (
+            'repository_metadata="$release_path/config/proton-repository.conf"'
+        )
+        self.assertIn(assignment, customizer)
+        self.assertIn('chmod 0644 "$repository_metadata"', customizer)
+        self.assertIn(assignment, rootfs_audit)
+        self.assertIn(
+            'assert_file "$repository_metadata" "0:0:644"', rootfs_audit
+        )
+        self.assertIn(
+            'find "$release_path" -xdev \\( -type f -o -type d \\) '
+            "-exec chmod go-w {} +",
+            customizer,
+        )
+        self.assertIn(
+            'fail "versioned release contains a non-root-owned entry:',
+            rootfs_audit,
+        )
+        self.assertIn(
+            'fail "versioned release contains a group/other-writable entry:',
+            rootfs_audit,
+        )
+
     def test_customizer_preserves_official_imager_user_customization(self) -> None:
         source = self.read("customize-rootfs")
 

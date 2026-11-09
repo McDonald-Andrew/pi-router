@@ -108,12 +108,27 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 asset_dir="$script_dir/../firstboot"
 release_dir="pi-router-v$version"
 release_path="$root/opt/pi-router/releases/$release_dir"
+repository_metadata="$release_path/config/proton-repository.conf"
 metadata="$root/usr/share/pi-router/image-build/metadata"
 packages="$root/usr/share/pi-router/image-build/packages.tsv"
 source_receipt="$root/usr/share/pi-router/image-build/source.sha256"
 preset="$root/etc/systemd/system-preset/00-pi-router-image.preset"
 
 assert_file "$release_path/setup" "0:0:755" "versioned setup executable"
+assert_file "$repository_metadata" "0:0:644" \
+    "versioned Proton repository metadata"
+unsafe_release_owner="$(
+    find "$release_path" -xdev \( -type f -o -type d \) \
+        \( ! -uid 0 -o ! -gid 0 \) -print -quit
+)"
+[[ -z "$unsafe_release_owner" ]] ||
+    fail "versioned release contains a non-root-owned entry: $unsafe_release_owner"
+unsafe_release_mode="$(
+    find "$release_path" -xdev \( -type f -o -type d \) \
+        -perm /022 -print -quit
+)"
+[[ -z "$unsafe_release_mode" ]] ||
+    fail "versioned release contains a group/other-writable entry: $unsafe_release_mode"
 [[ -L "$root/opt/pi-router/current" ]] || fail "stable release symlink is missing"
 [[ "$(readlink "$root/opt/pi-router/current")" == "releases/$release_dir" ]] ||
     fail "stable release symlink has the wrong target"
