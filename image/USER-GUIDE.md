@@ -69,11 +69,11 @@ The release manifest records both compressed and extracted hashes and sizes. Pub
 
 ## Write the microSD card
 
-This flow requires Raspberry Pi Imager 2.x. Do not select the raw `.img.xz`
-through **Use Custom**: Imager treats an un-described local image as not supporting OS customization.
+This flow requires Raspberry Pi Imager 2.x. Do not select the raw `.img.xz` through **Use Custom**: Imager treats an un-described local image as not supporting OS customization.
 
-1. Download and open the `.rpi-imager-manifest` with Raspberry Pi Imager. On Windows, you can double-click the manifest after installing Imager. Alternatively, open Imager's **App Options**, choose **Content Repository**, and select the custom manifest file.
-   - The image will ship with a `.rpi-imager-manifest` that mirrors the matching official Raspberry Pi OS Desktop entry's customization behavior.
+1. Download and open the `.rpi-imager-manifest` with Raspberry Pi Imager. This mirrors the matching official Raspberry Pi OS Desktop entry's customization behavior.
+   - On Windows, you can double-click the manifest after installing Imager.
+   - Alternatively, open Imager's **App Options**, choose **Content Repository**, and select the custom manifest file.
 2. Confirm that you intend to use the trusted repository, then select the Raspberry Pi 5 and the Pi Router OS entry supplied by that manifest.
 3. In OS customization, set the username to exactly `admin`, choose a unique password, and choose whether SSH is disabled, password-based, or key-based.
 4. Select the intended microSD card under **Choose Storage**.
