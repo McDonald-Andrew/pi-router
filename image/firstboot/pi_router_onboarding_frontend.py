@@ -32,6 +32,7 @@ from typing import Callable, Final, Mapping, Protocol
 DEFAULT_CONFIG_PATH: Final = Path("/etc/pi-router.conf")
 DEFAULT_ASSET_DIRECTORY: Final = Path("/usr/local/share/pi-router-onboarding")
 DEFAULT_SOCKET_PATH: Final = Path("/run/pi-router-image/onboarding.sock")
+DEFAULT_VERSION_PATH: Final = Path("/usr/local/share/pi-router-web/version.txt")
 DEFAULT_PORT: Final = 8080
 
 CREDENTIAL_VERSION: Final = 1
@@ -93,6 +94,12 @@ STATUS_CACHE_SECONDS: Final = 1.0
 _TOKEN_RE: Final = re.compile(r"\A[A-Za-z0-9_-]{43}\Z")
 _CONFIG_RE: Final = re.compile(
     r'''\ALAN_ADDR=(?:"([0-9.]+)"|'([0-9.]+)'|([0-9.]+))\Z'''
+)
+_VERSION_RE: Final = re.compile(
+    r"\Av?(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)"
+    r"(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z"
 )
 
 _CSP: Final = (
@@ -260,6 +267,32 @@ def load_lan_address(
     if address.is_unspecified or address.is_loopback or address.is_multicast:
         raise FrontendError()
     return str(address)
+
+
+def load_router_version(
+    version_path: Path,
+    *,
+    expected_owner: int | None = 0,
+    maximum_bytes: int = 128,
+) -> str:
+    """Read the same trusted version file used by the production web UI."""
+
+    try:
+        metadata = version_path.lstat()
+        if not stat.S_ISREG(metadata.st_mode):
+            raise FrontendError()
+        if expected_owner is not None and metadata.st_uid != expected_owner:
+            raise FrontendError()
+        if metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise FrontendError()
+        if not 1 <= metadata.st_size <= maximum_bytes:
+            raise FrontendError()
+        version = version_path.read_text(encoding="ascii").strip()
+    except (OSError, UnicodeError) as exc:
+        raise FrontendError() from exc
+    if _VERSION_RE.fullmatch(version) is None:
+        raise FrontendError()
+    return version
 
 
 @dataclass(frozen=True)
@@ -543,6 +576,7 @@ class FrontendSettings:
     lan_address: str
     port: int = DEFAULT_PORT
     provisioning_network: str = "192.168.50.0/24"
+    router_version: str = "v0.0.1"
 
     def __post_init__(self) -> None:
         address = ipaddress.IPv4Address(self.lan_address)
@@ -551,6 +585,8 @@ class FrontendSettings:
             raise ValueError("LAN address must be inside provisioning network")
         if not 1 <= self.port <= 65535:
             raise ValueError("invalid port")
+        if _VERSION_RE.fullmatch(self.router_version) is None:
+            raise ValueError("invalid router version")
 
     @property
     def authority(self) -> str:
@@ -596,7 +632,11 @@ class FrontendApplication:
                 return self._status_cached
             try:
                 code = self.backend.status()
-                document = {"status": code, "summary": _STATUS_SUMMARIES[code]}
+                document = {
+                    "status": code,
+                    "summary": _STATUS_SUMMARIES[code],
+                    "version": self.settings.router_version,
+                }
                 response = (
                     200,
                     json.dumps(document, separators=(",", ":")).encode("ascii"),
@@ -605,6 +645,7 @@ class FrontendApplication:
                 document = {
                     "status": "unavailable",
                     "summary": "Onboarding service is starting",
+                    "version": self.settings.router_version,
                 }
                 response = (
                     503,
@@ -1054,6 +1095,7 @@ def _argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG_PATH)
     parser.add_argument("--assets", type=Path, default=DEFAULT_ASSET_DIRECTORY)
     parser.add_argument("--socket", type=Path, default=DEFAULT_SOCKET_PATH)
+    parser.add_argument("--version-file", type=Path, default=DEFAULT_VERSION_PATH)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     return parser
 
@@ -1069,7 +1111,12 @@ def main(argv: list[str] | None = None) -> int:
             raise FrontendError()
 
         lan_address = load_lan_address(arguments.config)
-        settings = FrontendSettings(lan_address=lan_address, port=arguments.port)
+        router_version = load_router_version(arguments.version_file)
+        settings = FrontendSettings(
+            lan_address=lan_address,
+            port=arguments.port,
+            router_version=router_version,
+        )
         assets = AssetBundle.load(arguments.assets)
         backend = BrokerClient(arguments.socket)
         application = FrontendApplication(settings, assets, backend)

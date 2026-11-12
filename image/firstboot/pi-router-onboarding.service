@@ -7,13 +7,14 @@ After=network.target pi-router-onboarding-backend.service
 ConditionPathExists=/run/pi-router-image/onboarding.sock
 ConditionPathExists=/run/pi-router-image/onboarding.crt
 ConditionPathExists=/run/pi-router-image/onboarding.key
+ConditionPathExists=/usr/local/share/pi-router-web/version.txt
 
 [Service]
 Type=simple
 User=pi-router-onboarding
 Group=pi-router-onboarding
 UMask=0077
-ExecStart=/usr/local/libexec/pi-router-onboarding --config /etc/pi-router.conf --assets /usr/local/share/pi-router-onboarding --socket /run/pi-router-image/onboarding.sock --port 8080
+ExecStart=/usr/local/libexec/pi-router-onboarding --config /etc/pi-router.conf --assets /usr/local/share/pi-router-onboarding --socket /run/pi-router-image/onboarding.sock --version-file /usr/local/share/pi-router-web/version.txt --port 8080
 LoadCredential=tls.crt:/run/pi-router-image/onboarding.crt
 LoadCredential=tls.key:/run/pi-router-image/onboarding.key
 Restart=no

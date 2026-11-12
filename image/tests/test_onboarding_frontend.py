@@ -95,6 +95,19 @@ class ConfigAndAssetTests(unittest.TestCase):
                     with self.assertRaises(frontend.FrontendError):
                         frontend.load_lan_address(path, expected_owner=None)
 
+    def test_loads_the_production_web_version_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "version.txt"
+            path.write_text("v1.2.3-test.4\n", encoding="ascii")
+            self.assertEqual(
+                frontend.load_router_version(path, expected_owner=None),
+                "v1.2.3-test.4",
+            )
+
+            path.write_text("not-a-version\n", encoding="ascii")
+            with self.assertRaises(frontend.FrontendError):
+                frontend.load_router_version(path, expected_owner=None)
+
     def test_asset_bundle_requires_and_replaces_csrf_marker(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -295,7 +308,10 @@ class HTTPFrontendTests(unittest.TestCase):
         )
         self.backend = FakeBackend()
         settings = frontend.FrontendSettings(
-            "127.0.0.1", port=8080, provisioning_network="127.0.0.0/8"
+            "127.0.0.1",
+            port=8080,
+            provisioning_network="127.0.0.0/8",
+            router_version="v1.2.3-test.4",
         )
         application = frontend.FrontendApplication(
             settings,
@@ -400,7 +416,8 @@ class HTTPFrontendTests(unittest.TestCase):
         document = json.loads(body)
         self.assertEqual(document["status"], "waiting-onboarding")
         self.assertEqual(document["summary"], "Ready for Proton sign-in")
-        self.assertEqual(set(document), {"status", "summary"})
+        self.assertEqual(document["version"], "v1.2.3-test.4")
+        self.assertEqual(set(document), {"status", "summary", "version"})
         self.assertTrue(response.getheader("Set-Cookie", "").startswith(cookie + ";"))
         self.assertIn(
             f"Max-Age={frontend.SESSION_SECONDS}",
@@ -500,6 +517,12 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("RestrictAddressFamilies=AF_INET AF_UNIX", service)
         self.assertIn("IPAddressDeny=any", service)
         self.assertIn("--port 8080", service)
+        self.assertIn(
+            "--version-file /usr/local/share/pi-router-web/version.txt", service
+        )
+        self.assertIn(
+            "ConditionPathExists=/usr/local/share/pi-router-web/version.txt", service
+        )
         self.assertIn("SocketBindAllow=ipv4:tcp:8080", service)
         self.assertNotIn("8443", service)
         self.assertIn("LimitCORE=0", service)
@@ -521,6 +544,9 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn('href="/src/web/styles.css"', index)
         self.assertIn('src="/src/web/favicon.svg"', index)
         self.assertIn('class="brand-icon"', index)
+        self.assertIn('id="routerVersion"', index)
+        self.assertIn("Onboarding | v0.0.1", index)
+        self.assertNotIn("First boot setup", index)
         self.assertIn('class="message success"', index)
         self.assertGreaterEqual(index.count('role="status"'), 2)
         self.assertIn('id="form-result"', index)
@@ -552,6 +578,10 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("PRODUCTION_REDIRECT_DELAY_MS = 300000", javascript)
         self.assertIn("window.location.replace(PRODUCTION_URL)", javascript)
         self.assertIn("function scheduleProductionRedirect()", javascript)
+        self.assertIn(
+            '`Onboarding | ${documentValue.version || "v0.0.1"}`',
+            javascript,
+        )
         self.assertIn('element.className = `message ${kind}`', javascript)
         self.assertIn('element.className = "message"', javascript)
         self.assertIn("element.hidden = false", javascript)

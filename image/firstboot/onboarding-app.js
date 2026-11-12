@@ -15,6 +15,7 @@
   const submitButton = document.getElementById("submit-button");
   const result = document.getElementById("form-result");
   const statusSummary = document.getElementById("status-summary");
+  const routerVersion = document.getElementById("routerVersion");
   const encoder = new TextEncoder();
   let onboardingSubmitted = false;
   let runningPostObserved = false;
@@ -94,6 +95,8 @@
   }
 
   function presentStatus(documentValue) {
+    routerVersion.textContent =
+      `Onboarding | ${documentValue.version || "v0.0.1"}`;
     if (onboardingSubmitted && documentValue.status === "running-post-reboot") {
       runningPostObserved = true;
     }
