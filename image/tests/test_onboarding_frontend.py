@@ -595,6 +595,10 @@ class ServiceDefinitionTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn(".concealed-credential.has-value", stylesheet)
+        self.assertRegex(
+            stylesheet,
+            r"(?s)\.concealed-credential\s*\{.*?width:\s*50%;",
+        )
         self.assertIn("caret-color: transparent", stylesheet)
         self.assertIn("opacity: 0", stylesheet)
         self.assertIn(".message.success", stylesheet)

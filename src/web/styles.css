@@ -604,6 +604,7 @@ tbody tr:last-child td {
  */
 .concealed-credential {
   position: relative;
+  width: 50%;
   border: 1px solid #bfc7cc;
   border-radius: 3px;
   background: #fff;
