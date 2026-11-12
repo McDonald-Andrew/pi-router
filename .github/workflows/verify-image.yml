@@ -120,13 +120,15 @@ jobs:
           echo "Statically checked $checked image shell source(s)"
 
       - name: Run Python static analysis
-        run: python3 -m ruff check --output-format=github --select=E9,F63,F7,F82 image
+        run: >-
+          python3 -m ruff check --output-format=github --select=E9,F63,F7,F82
+          image src/web/*.py
 
       - name: Check image Python syntax
-        run: python3 -m compileall -q image
+        run: python3 -m compileall -q image src/web
 
       - name: Check onboarding JavaScript syntax
-        run: node --check image/firstboot/onboarding-app.js
+        run: node --check src/web/onboarding-app.js
 
       - name: Run image unit tests
         run: python3 -m unittest discover -s image/tests -p "test_*.py"

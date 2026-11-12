@@ -6,12 +6,20 @@ import unittest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RELEASE_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "release.yml"
+VERIFY_WORKFLOW = REPOSITORY_ROOT / ".github" / "workflows" / "verify-image.yml"
 
 
 class GitHubImageWorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.release = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+        cls.verify = VERIFY_WORKFLOW.read_text(encoding="utf-8")
+
+    def test_verification_covers_the_relocated_web_sources(self) -> None:
+        self.assertIn("image src/web/*.py", self.verify)
+        self.assertIn("python3 -m compileall -q image src/web", self.verify)
+        self.assertIn("node --check src/web/onboarding-app.js", self.verify)
+        self.assertNotIn("image/firstboot/onboarding-app.js", self.verify)
 
     def test_release_is_the_single_image_workflow(self) -> None:
         self.assertIn("workflow_dispatch:", self.release)
