@@ -9,9 +9,9 @@ from typing import Callable, Sequence
 from unittest import mock
 
 
-FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
+PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
 WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
-sys.path.insert(0, str(FIRSTBOOT_DIR))
+sys.path.insert(0, str(PROVISION_DIR))
 sys.path.insert(0, str(WEB_DIR))
 
 import pi_router_image_controller as controller_module  # noqa: E402
@@ -1395,7 +1395,7 @@ class UnitContractTests(unittest.TestCase):
         )
 
     def test_all_controller_terminal_codes_exist_in_state_schema(self) -> None:
-        source = (FIRSTBOOT_DIR / "pi_router_image_controller.py").read_text(
+        source = (PROVISION_DIR / "pi_router_image_controller.py").read_text(
             encoding="utf-8"
         )
         tree = ast.parse(source)
@@ -1415,13 +1415,13 @@ class UnitContractTests(unittest.TestCase):
         self.assertEqual(codes - image_state.ERROR_CODES, set())
 
     def test_timer_retries_oneshot_without_network_online_dependency(self) -> None:
-        service = (FIRSTBOOT_DIR / "pi-router-image-controller.service").read_text(
+        service = (PROVISION_DIR / "pi-router-image-controller.service").read_text(
             encoding="utf-8"
         )
-        timer = (FIRSTBOOT_DIR / "pi-router-image-controller.timer").read_text(
+        timer = (PROVISION_DIR / "pi-router-image-controller.timer").read_text(
             encoding="utf-8"
         )
-        executable = (FIRSTBOOT_DIR / "pi-router-image-controller").read_text(
+        executable = (PROVISION_DIR / "pi-router-image-controller").read_text(
             encoding="utf-8"
         )
         self.assertIn("Type=oneshot", service)

@@ -6,7 +6,7 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SETUP="$REPOSITORY_ROOT/src/setup"
 CONTRACT="$REPOSITORY_ROOT/image/README.md"
-ANSWERS="$REPOSITORY_ROOT/image/firstboot/pi-router-image.conf"
+ANSWERS="$REPOSITORY_ROOT/image/provision/pi-router-image.conf"
 
 fail() {
     printf 'test-contract: FAIL: %s\n' "$*" >&2

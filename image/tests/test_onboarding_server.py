@@ -13,10 +13,10 @@ import unittest
 from pathlib import Path
 
 
-FIRSTBOOT = Path(__file__).resolve().parents[1] / "firstboot"
-REPOSITORY_ROOT = FIRSTBOOT.parents[1]
+PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
+REPOSITORY_ROOT = PROVISION_DIR.parents[1]
 WEB = REPOSITORY_ROOT / "src/web"
-os.sys.path.insert(0, str(FIRSTBOOT))
+os.sys.path.insert(0, str(PROVISION_DIR))
 os.sys.path.insert(0, str(WEB))
 
 import onboarding_server as frontend  # noqa: E402
@@ -505,10 +505,10 @@ class HTTPFrontendTests(unittest.TestCase):
 
 class ServiceDefinitionTests(unittest.TestCase):
     def test_service_is_static_hardened_and_uses_systemd_credentials(self) -> None:
-        service = (FIRSTBOOT / "pi-router-onboarding-server.service").read_text(
+        service = (PROVISION_DIR / "pi-router-onboarding-server.service").read_text(
             encoding="utf-8"
         )
-        executable = (FIRSTBOOT / "pi-router-onboarding-server").read_text(
+        executable = (PROVISION_DIR / "pi-router-onboarding-server").read_text(
             encoding="utf-8"
         )
         self.assertEqual(frontend.DEFAULT_PORT, 8080)

@@ -121,7 +121,7 @@ Pi without having run any target ARM binary during image construction.
 
 - [x] Use setup's staging `boot` phase to add exactly one PCIe x1 setting and
   reject a Gen3 override without duplicating setup logic.
-- [x] Install the complete image-owned firstboot/onboarding stack for both
+- [x] Install the complete image-owned provisioning/onboarding stack for both
   build profiles.
 - [x] Install an early safety preset that leaves router and audited
   network-facing services disabled before provisioning.

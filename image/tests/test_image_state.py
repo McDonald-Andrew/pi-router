@@ -9,8 +9,8 @@ from pathlib import Path
 from unittest import mock
 
 
-FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
-sys.path.insert(0, str(FIRSTBOOT_DIR))
+PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
+sys.path.insert(0, str(PROVISION_DIR))
 
 import pi_router_image_state as image_state  # noqa: E402
 

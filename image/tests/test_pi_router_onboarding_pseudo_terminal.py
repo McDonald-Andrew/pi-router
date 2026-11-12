@@ -14,8 +14,8 @@ import time
 import unittest
 
 
-FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
-sys.path.insert(0, str(FIRSTBOOT_DIR))
+PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
+sys.path.insert(0, str(PROVISION_DIR))
 
 from pi_router_onboarding_pseudo_terminal import (  # noqa: E402
     SETUP_ARGV,

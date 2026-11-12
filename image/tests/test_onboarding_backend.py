@@ -14,8 +14,8 @@ from pathlib import Path
 from typing import Callable, Sequence
 
 
-FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
-sys.path.insert(0, str(FIRSTBOOT_DIR))
+PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
+sys.path.insert(0, str(PROVISION_DIR))
 
 import pi_router_onboarding_pseudo_terminal as pseudo_terminal  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
@@ -653,9 +653,9 @@ class TLSContractTests(unittest.TestCase):
 
     def test_backend_unit_notifies_only_after_runtime_material_exists(self) -> None:
         unit = (
-            FIRSTBOOT_DIR / "pi-router-onboarding-backend.service"
+            PROVISION_DIR / "pi-router-onboarding-backend.service"
         ).read_text(encoding="utf-8")
-        frontend = (FIRSTBOOT_DIR / "pi-router-onboarding-server.service").read_text(
+        frontend = (PROVISION_DIR / "pi-router-onboarding-server.service").read_text(
             encoding="utf-8"
         )
         self.assertIn("Type=notify", unit)
@@ -670,9 +670,9 @@ class TLSContractTests(unittest.TestCase):
 
     def test_backend_does_not_make_immutable_credential_copies(self) -> None:
         source = (
-            FIRSTBOOT_DIR / "pi_router_onboarding_backend.py"
+            PROVISION_DIR / "pi_router_onboarding_backend.py"
         ).read_text(encoding="utf-8")
-        entry = (FIRSTBOOT_DIR / "pi-router-onboarding-backend").read_text(
+        entry = (PROVISION_DIR / "pi-router-onboarding-backend").read_text(
             encoding="utf-8"
         )
         self.assertNotIn("bytes(username)", source)

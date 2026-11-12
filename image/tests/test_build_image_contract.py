@@ -37,17 +37,19 @@ class BuildImageContractTests(unittest.TestCase):
             'image_name="pi-router-v${version}-pi5-arm64-development"', source
         )
 
-    def test_both_profiles_receive_the_same_complete_firstboot_stack(self) -> None:
+    def test_both_profiles_receive_the_same_complete_provisioning_stack(self) -> None:
         source = self.read("customize-rootfs")
 
         profile_case_end = source.index("esac")
-        first_stack_install = source.index("pi-router-image-controller.service")
-        self.assertLess(profile_case_end, first_stack_install)
+        provisioning_stack_install = source.index(
+            "pi-router-image-controller.service"
+        )
+        self.assertLess(profile_case_end, provisioning_stack_install)
         self.assertNotIn(
-            '[[ "$PI_ROUTER_IMAGE_PROFILE" ==', source[first_stack_install:]
+            '[[ "$PI_ROUTER_IMAGE_PROFILE" ==', source[provisioning_stack_install:]
         )
         self.assertNotIn(
-            'if [[ "$PI_ROUTER_IMAGE_PROFILE"', source[first_stack_install:]
+            'if [[ "$PI_ROUTER_IMAGE_PROFILE"', source[provisioning_stack_install:]
         )
 
     def test_embedded_and_external_metadata_require_release_status(self) -> None:
@@ -129,7 +131,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn("--phase packages", customizer)
         self.assertNotIn("apt-get", customizer)
 
-    def test_customizer_embeds_the_complete_firstboot_stack(self) -> None:
+    def test_customizer_embeds_the_complete_provisioning_stack(self) -> None:
         source = self.read("customize-rootfs")
 
         for artifact in (
@@ -155,12 +157,12 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn('"$release_path/web/onboarding-index.html"', source)
         self.assertIn('"$release_path/web/onboarding-app.js"', source)
         self.assertIn('"$release_path/web/onboarding_server.py"', source)
-        self.assertNotIn('"$firstboot_source/onboarding-index.html"', source)
-        self.assertNotIn('"$firstboot_source/onboarding-app.js"', source)
+        self.assertNotIn('"$provision_source/onboarding-index.html"', source)
+        self.assertNotIn('"$provision_source/onboarding-app.js"', source)
         self.assertNotIn(
             '"$release_path/web/pi_router_onboarding_pseudo_terminal.py"', source
         )
-        self.assertNotIn('"$firstboot_source/onboarding_server.py"', source)
+        self.assertNotIn('"$provision_source/onboarding_server.py"', source)
         self.assertIn(
             'systemd-sysusers --root="$root" pi-router-onboarding.conf', source
         )
@@ -178,7 +180,7 @@ class BuildImageContractTests(unittest.TestCase):
         customizer = self.read("customize-rootfs")
         rootfs_audit = self.read("tests/verify-rootfs")
 
-        self.assertFalse((IMAGE_DIR / "firstboot/onboarding-styles.css").exists())
+        self.assertFalse((IMAGE_DIR / "provision/onboarding-styles.css").exists())
         self.assertIn('"$release_path/web/styles.css"', customizer)
         self.assertIn('"$release_path/web/styles.css"', rootfs_audit)
         self.assertIn('"$release_path/web/favicon.svg"', customizer)
@@ -229,13 +231,13 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn("mask userconfig.service", source)
         self.assertIn("base_os=raspberry-pi-os", source)
 
-        unit = self.read("firstboot/pi-router-image-controller.service")
+        unit = self.read("provision/pi-router-image-controller.service")
         self.assertIn("Wants=cloud-init.target", unit)
         self.assertIn("After=local-fs.target cloud-init.target", unit)
 
     def test_ssh_policy_does_not_override_imager_authentication_choice(self) -> None:
-        source = self.read("firstboot/pi-router-sshd.conf")
-        retry = self.read("firstboot/pi-router-ssh-retry.conf")
+        source = self.read("provision/pi-router-sshd.conf")
+        retry = self.read("provision/pi-router-ssh-retry.conf")
 
         self.assertIn("ListenAddress 192.168.50.1", source)
         self.assertIn("AllowUsers admin", source)

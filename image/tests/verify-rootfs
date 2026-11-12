@@ -369,7 +369,7 @@ do
         "$asset_dir/$module" \
         "$root/usr/local/lib/pi-router-image/$module" \
         "0:0:644" \
-        "firstboot Python module"
+        "provisioning Python module"
 done
 assert_copy \
     "$release_path/web/onboarding_server.py" \
@@ -382,7 +382,7 @@ for executable in pi-router-image-controller pi-router-onboarding-server pi-rout
         "$asset_dir/$executable" \
         "$root/usr/local/libexec/$executable" \
         "0:0:755" \
-        "firstboot executable"
+        "provisioning executable"
 done
 
 for unit in \
@@ -395,7 +395,7 @@ do
         "$asset_dir/$unit" \
         "$root/etc/systemd/system/$unit" \
         "0:0:644" \
-        "firstboot systemd unit"
+        "provisioning systemd unit"
 done
 
 assert_copy \

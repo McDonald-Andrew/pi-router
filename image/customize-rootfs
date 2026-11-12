@@ -62,7 +62,7 @@ version=$PI_ROUTER_VERSION
 release_name="pi-router-v$version"
 release_path="$root/opt/pi-router/releases/$release_name"
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-firstboot_source="$script_dir/firstboot"
+provision_source="$script_dir/provision"
 
 [[ ! -e "$release_path" && ! -L "$release_path" ]] ||
     die "release destination already exists"
@@ -113,22 +113,22 @@ bash "$release_path/setup" \
 
 # Install the isolated first-boot stack before creating its service account.
 install -D -o root -g root -m 0600 \
-    "$firstboot_source/pi-router-image.conf" \
+    "$provision_source/pi-router-image.conf" \
     "$root/etc/pi-router-image.conf"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/00-pi-router-image.preset" \
+    "$provision_source/00-pi-router-image.preset" \
     "$root/etc/systemd/system-preset/00-pi-router-image.preset"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/zz-pi-router-image-bootstrap.conf" \
+    "$provision_source/zz-pi-router-image-bootstrap.conf" \
     "$root/etc/sysctl.d/zz-pi-router-image-bootstrap.conf"
 install -D -o root -g root -m 0755 \
-    "$firstboot_source/pi-router-policy-rc.d" \
+    "$provision_source/pi-router-policy-rc.d" \
     "$root/usr/sbin/policy-rc.d"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/pi-router-sshd.conf" \
+    "$provision_source/pi-router-sshd.conf" \
     "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/pi-router-ssh-retry.conf" \
+    "$provision_source/pi-router-ssh-retry.conf" \
     "$root/etc/systemd/system/ssh.service.d/60-pi-router-address-retry.conf"
 
 for module in \
@@ -138,7 +138,7 @@ for module in \
     pi_router_onboarding_pseudo_terminal.py
 do
     install -D -o root -g root -m 0644 \
-        "$firstboot_source/$module" \
+        "$provision_source/$module" \
         "$root/usr/local/lib/pi-router-image/$module"
 done
 install -D -o root -g root -m 0644 \
@@ -151,7 +151,7 @@ for executable in \
     pi-router-onboarding-backend
 do
     install -D -o root -g root -m 0755 \
-        "$firstboot_source/$executable" \
+        "$provision_source/$executable" \
         "$root/usr/local/libexec/$executable"
 done
 
@@ -162,12 +162,12 @@ for unit in \
     pi-router-onboarding-backend.service
 do
     install -D -o root -g root -m 0644 \
-        "$firstboot_source/$unit" \
+        "$provision_source/$unit" \
         "$root/etc/systemd/system/$unit"
 done
 
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/pi-router-onboarding.sysusers" \
+    "$provision_source/pi-router-onboarding.sysusers" \
     "$root/usr/lib/sysusers.d/pi-router-onboarding.conf"
 install -D -o root -g root -m 0644 \
     "$release_path/web/onboarding-index.html" \
