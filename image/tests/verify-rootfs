@@ -413,6 +413,11 @@ assert_copy \
     "$root/usr/local/share/pi-router-onboarding/favicon.svg" \
     "0:0:644" \
     "shared router logo"
+assert_copy \
+    "$release_path/web/favicon.ico" \
+    "$root/usr/local/share/pi-router-onboarding/favicon.ico" \
+    "0:0:644" \
+    "shared router browser icon"
 
 onboarding_passwd="$(awk -F: '$1 == "pi-router-onboarding" {print}' "$root/etc/passwd")"
 [[ "$(grep -c '^pi-router-onboarding:' "$root/etc/passwd")" -eq 1 ]] ||

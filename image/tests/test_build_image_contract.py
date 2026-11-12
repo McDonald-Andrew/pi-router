@@ -183,6 +183,8 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertIn('"$release_path/web/styles.css"', rootfs_audit)
         self.assertIn('"$release_path/web/favicon.svg"', customizer)
         self.assertIn('"$release_path/web/favicon.svg"', rootfs_audit)
+        self.assertIn('"$release_path/web/favicon.ico"', customizer)
+        self.assertIn('"$release_path/web/favicon.ico"', rootfs_audit)
         self.assertNotIn("onboarding-styles.css", customizer)
         self.assertNotIn("onboarding-styles.css", rootfs_audit)
 

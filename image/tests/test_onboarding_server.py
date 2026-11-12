@@ -119,6 +119,7 @@ class ConfigAndAssetTests(unittest.TestCase):
             (root / "app.js").write_bytes(b"void 0;")
             (root / "styles.css").write_bytes(b"body{}")
             (root / "favicon.svg").write_bytes(b"<svg/>")
+            (root / "favicon.ico").write_bytes(b"ICO")
             assets = frontend.AssetBundle.load(root)
             token = "A" * 43
             rendered = assets.index_for(token)
@@ -306,7 +307,8 @@ class HTTPFrontendTests(unittest.TestCase):
             index=b'<meta name="pi-router-csrf" content="__PI_ROUTER_CSRF_TOKEN__">',
             javascript=b"void 0;",
             stylesheet=b"body{}",
-            favicon=b"<svg/>",
+            favicon_svg=b"<svg/>",
+            favicon_ico=b"ICO",
         )
         self.backend = FakeBackend()
         settings = frontend.FrontendSettings(
@@ -399,6 +401,11 @@ class HTTPFrontendTests(unittest.TestCase):
         self.assertEqual(favicon.status, 200)
         self.assertEqual(favicon_body, b"<svg/>")
         self.assertEqual(favicon.getheader("Content-Type"), "image/svg+xml")
+
+        browser_icon, browser_icon_body = self.request("GET", "/favicon.ico")
+        self.assertEqual(browser_icon.status, 200)
+        self.assertEqual(browser_icon_body, b"ICO")
+        self.assertEqual(browser_icon.getheader("Content-Type"), "image/x-icon")
 
     def test_reload_reuses_live_session_so_claimant_can_retry(self) -> None:
         cookie, csrf = self.new_session()
@@ -549,6 +556,11 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("Do not let the browser save this password", index)
         self.assertIn("same fixed mask", index)
         self.assertIn('href="/src/web/styles.css"', index)
+        self.assertIn(
+            'rel="icon" type="image/svg+xml" href="/src/web/favicon.svg"',
+            index,
+        )
+        self.assertIn('rel="alternate icon" href="/favicon.ico"', index)
         self.assertIn('src="/src/web/favicon.svg"', index)
         self.assertIn('class="brand-icon"', index)
         self.assertIn('id="routerVersion"', index)
@@ -658,7 +670,8 @@ class TLSDispatchTests(unittest.TestCase):
             index=b"__PI_ROUTER_CSRF_TOKEN__",
             javascript=b"",
             stylesheet=b"",
-            favicon=b"",
+            favicon_svg=b"",
+            favicon_ico=b"",
         )
         application = frontend.FrontendApplication(
             frontend.FrontendSettings(

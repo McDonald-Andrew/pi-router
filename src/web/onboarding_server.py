@@ -301,7 +301,8 @@ class AssetBundle:
     index: bytes
     javascript: bytes
     stylesheet: bytes
-    favicon: bytes
+    favicon_svg: bytes
+    favicon_ico: bytes
 
     @classmethod
     def load(cls, directory: Path) -> "AssetBundle":
@@ -309,13 +310,20 @@ class AssetBundle:
             index = (directory / "index.html").read_bytes()
             javascript = (directory / "app.js").read_bytes()
             stylesheet = (directory / "styles.css").read_bytes()
-            favicon = (directory / "favicon.svg").read_bytes()
+            favicon_svg = (directory / "favicon.svg").read_bytes()
+            favicon_ico = (directory / "favicon.ico").read_bytes()
         except OSError as exc:
             raise FrontendError() from exc
         if b"__PI_ROUTER_CSRF_TOKEN__" not in index:
             raise FrontendError()
         if (
-            max(len(index), len(javascript), len(stylesheet), len(favicon))
+            max(
+                len(index),
+                len(javascript),
+                len(stylesheet),
+                len(favicon_svg),
+                len(favicon_ico),
+            )
             > 256 * 1024
         ):
             raise FrontendError()
@@ -323,7 +331,8 @@ class AssetBundle:
             index=index,
             javascript=javascript,
             stylesheet=stylesheet,
-            favicon=favicon,
+            favicon_svg=favicon_svg,
+            favicon_ico=favicon_ico,
         )
 
     def index_for(self, csrf_token: str) -> bytes:
@@ -958,8 +967,15 @@ class OnboardingRequestHandler(BaseHTTPRequestHandler):
             if self.path == "/src/web/favicon.svg":
                 self._respond(
                     200,
-                    self.application.assets.favicon,
+                    self.application.assets.favicon_svg,
                     "image/svg+xml",
+                )
+                return
+            if self.path == "/favicon.ico":
+                self._respond(
+                    200,
+                    self.application.assets.favicon_ico,
+                    "image/x-icon",
                 )
                 return
             if self.path == "/api/status":

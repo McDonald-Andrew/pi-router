@@ -172,6 +172,9 @@ install -D -o root -g root -m 0644 \
 install -D -o root -g root -m 0644 \
     "$release_path/web/favicon.svg" \
     "$root/usr/local/share/pi-router-onboarding/favicon.svg"
+install -D -o root -g root -m 0644 \
+    "$release_path/web/favicon.ico" \
+    "$root/usr/local/share/pi-router-onboarding/favicon.ico"
 
 systemd-sysusers --root="$root" pi-router-onboarding.conf
 
