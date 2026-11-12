@@ -440,6 +440,8 @@ src/
     ├── favicon.ico
     ├── favicon.svg
     ├── index.html
+    ├── onboarding-app.js
+    ├── onboarding-index.html
     ├── server.py
     └── styles.css
 ```
