@@ -102,6 +102,7 @@ class ConfigAndAssetTests(unittest.TestCase):
             )
             (root / "app.js").write_bytes(b"void 0;")
             (root / "styles.css").write_bytes(b"body{}")
+            (root / "favicon.svg").write_bytes(b"<svg/>")
             assets = frontend.AssetBundle.load(root)
             token = "A" * 43
             rendered = assets.index_for(token)
@@ -112,19 +113,15 @@ class ConfigAndAssetTests(unittest.TestCase):
 class StatusPresentationContractTests(unittest.TestCase):
     def test_frontend_and_durable_status_enums_are_synchronized(self) -> None:
         self.assertEqual(
-            set(frontend._STATUS_PRESENTATION),
+            set(frontend._STATUS_SUMMARIES),
             set(image_state.STATUS_CODES),
         )
 
-    def test_live_wait_statuses_never_claim_wan_is_connected(self) -> None:
-        for code in (
-            "waiting-lan-carrier",
-            "waiting-wan-carrier",
-            "waiting-wan-dhcp",
-        ):
+    def test_status_summaries_are_nonempty_strings(self) -> None:
+        for code, summary in frontend._STATUS_SUMMARIES.items():
             with self.subTest(code=code):
-                presentation = frontend._STATUS_PRESENTATION[code]
-                self.assertNotEqual(presentation["wan"], "connected")
+                self.assertIsInstance(summary, str)
+                self.assertTrue(summary)
 
 
 class FakeSocket:
@@ -293,6 +290,7 @@ class HTTPFrontendTests(unittest.TestCase):
             index=b'<meta name="pi-router-csrf" content="__PI_ROUTER_CSRF_TOKEN__">',
             javascript=b"void 0;",
             stylesheet=b"body{}",
+            favicon=b"<svg/>",
         )
         self.backend = FakeBackend()
         settings = frontend.FrontendSettings(
@@ -361,6 +359,28 @@ class HTTPFrontendTests(unittest.TestCase):
         self.assertIn("default-src 'self'", response.getheader("Content-Security-Policy", ""))
         self.assertIsNone(response.getheader("Access-Control-Allow-Origin"))
 
+    def test_shared_stylesheet_and_onboarding_script_are_served(self) -> None:
+        stylesheet, stylesheet_body = self.request("GET", "/src/web/styles.css")
+        self.assertEqual(stylesheet.status, 200)
+        self.assertEqual(stylesheet_body, b"body{}")
+        self.assertEqual(
+            stylesheet.getheader("Content-Type"),
+            "text/css; charset=utf-8",
+        )
+
+        javascript, javascript_body = self.request("GET", "/onboarding-app.js")
+        self.assertEqual(javascript.status, 200)
+        self.assertEqual(javascript_body, b"void 0;")
+        self.assertEqual(
+            javascript.getheader("Content-Type"),
+            "application/javascript; charset=utf-8",
+        )
+
+        favicon, favicon_body = self.request("GET", "/src/web/favicon.svg")
+        self.assertEqual(favicon.status, 200)
+        self.assertEqual(favicon_body, b"<svg/>")
+        self.assertEqual(favicon.getheader("Content-Type"), "image/svg+xml")
+
     def test_reload_reuses_live_session_so_claimant_can_retry(self) -> None:
         cookie, csrf = self.new_session()
         response, body = self.request("GET", "/", headers={"Cookie": cookie})
@@ -378,7 +398,8 @@ class HTTPFrontendTests(unittest.TestCase):
         self.assertEqual(response.status, 200)
         document = json.loads(body)
         self.assertEqual(document["status"], "waiting-onboarding")
-        self.assertEqual(document["hardware"], "verified")
+        self.assertEqual(document["summary"], "Ready for Proton sign-in")
+        self.assertEqual(set(document), {"status", "summary"})
         self.assertTrue(response.getheader("Set-Cookie", "").startswith(cookie + ";"))
         self.assertIn(
             f"Max-Age={frontend.SESSION_SECONDS}",
@@ -488,6 +509,23 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertGreaterEqual(index.count('autocapitalize="none"'), 2)
         self.assertGreaterEqual(index.count('spellcheck="false"'), 2)
         self.assertIn("Do not let the browser save this password", index)
+        self.assertIn('href="/src/web/styles.css"', index)
+        self.assertIn('src="/src/web/favicon.svg"', index)
+        self.assertIn('class="brand-icon"', index)
+        self.assertNotIn("onboarding-styles.css", index)
+        self.assertIn('src="./onboarding-app.js"', index)
+        self.assertNotIn("Router checks", index)
+        for removed_id in (
+            "status-badge",
+            "status-hardware",
+            "status-cables",
+            "status-wan",
+            "status-setup",
+            "status-error",
+        ):
+            with self.subTest(removed_id=removed_id):
+                self.assertNotIn(removed_id, index)
+                self.assertNotIn(removed_id, javascript)
         self.assertIn("response.status === 401", javascript)
         self.assertIn("runningPostObserved", javascript)
         self.assertIn("Sign-in did not complete", javascript)
@@ -537,6 +575,7 @@ class TLSDispatchTests(unittest.TestCase):
             index=b"__PI_ROUTER_CSRF_TOKEN__",
             javascript=b"",
             stylesheet=b"",
+            favicon=b"",
         )
         application = frontend.FrontendApplication(
             frontend.FrontendSettings(

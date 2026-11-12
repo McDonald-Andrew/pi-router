@@ -267,6 +267,7 @@ class AssetBundle:
     index: bytes
     javascript: bytes
     stylesheet: bytes
+    favicon: bytes
 
     @classmethod
     def load(cls, directory: Path) -> "AssetBundle":
@@ -274,13 +275,22 @@ class AssetBundle:
             index = (directory / "index.html").read_bytes()
             javascript = (directory / "app.js").read_bytes()
             stylesheet = (directory / "styles.css").read_bytes()
+            favicon = (directory / "favicon.svg").read_bytes()
         except OSError as exc:
             raise FrontendError() from exc
         if b"__PI_ROUTER_CSRF_TOKEN__" not in index:
             raise FrontendError()
-        if max(len(index), len(javascript), len(stylesheet)) > 256 * 1024:
+        if (
+            max(len(index), len(javascript), len(stylesheet), len(favicon))
+            > 256 * 1024
+        ):
             raise FrontendError()
-        return cls(index=index, javascript=javascript, stylesheet=stylesheet)
+        return cls(
+            index=index,
+            javascript=javascript,
+            stylesheet=stylesheet,
+            favicon=favicon,
+        )
 
     def index_for(self, csrf_token: str) -> bytes:
         if _TOKEN_RE.fullmatch(csrf_token) is None:
@@ -506,169 +516,25 @@ class RateLimiter:
             return True, 0
 
 
-_STATUS_PRESENTATION: Final[Mapping[str, Mapping[str, str | bool]]] = {
-    "initializing-identity": {
-        "summary": "Initializing this router",
-        "hardware": "pending",
-        "cables": "pending",
-        "wan": "pending",
-        "setup": "initializing",
-        "error": "none",
-        "ready": False,
-    },
-    "detecting-hardware": {
-        "summary": "Checking router hardware",
-        "hardware": "checking",
-        "cables": "pending",
-        "wan": "pending",
-        "setup": "preparing",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-lan-carrier": {
-        "summary": "Connect the downstream LAN cable",
-        "hardware": "verified",
-        "cables": "waiting for LAN",
-        "wan": "pending",
-        "setup": "paused safely",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-wan-carrier": {
-        "summary": "Connect the Waveshare WAN cable",
-        "hardware": "verified",
-        "cables": "waiting for WAN",
-        "wan": "pending",
-        "setup": "paused safely",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-wan-dhcp": {
-        "summary": "Waiting for an Internet address",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "acquiring address",
-        "setup": "paused safely",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-repository": {
-        "summary": "Waiting for the certified release",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "waiting for release",
-        "error": "none",
-        "ready": False,
-    },
-    "running-pre-reboot": {
-        "summary": "Installing router services",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "installing",
-        "error": "none",
-        "ready": False,
-    },
-    "resuming-pre-reboot": {
-        "summary": "Safely resuming installation",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "resuming",
-        "error": "none",
-        "ready": False,
-    },
-    "rebooting-after-pre": {
-        "summary": "Router is restarting",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "restarting",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-desktop": {
-        "summary": "Waiting for the local desktop session",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "preparing sign-in",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-onboarding": {
-        "summary": "Ready for Proton sign-in",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "waiting for sign-in",
-        "error": "none",
-        "ready": False,
-    },
-    "running-post-reboot": {
-        "summary": "Signing in and verifying Proton",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "verifying Proton",
-        "error": "none",
-        "ready": False,
-    },
-    "rebooting-after-post": {
-        "summary": "Proton verified; router is restarting",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "restarting",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-final-services": {
-        "summary": "Waiting for router services",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "final checks",
-        "error": "none",
-        "ready": False,
-    },
-    "waiting-final-recovery": {
-        "summary": "Confirming final verification commit",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "recovering final verification",
-        "error": "none",
-        "ready": False,
-    },
-    "running-final-verify": {
-        "summary": "Running final verification",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected",
-        "setup": "final verification",
-        "error": "none",
-        "ready": False,
-    },
-    "ready": {
-        "summary": "Pi Router is ready",
-        "hardware": "verified",
-        "cables": "connected",
-        "wan": "connected through Proton",
-        "setup": "complete",
-        "error": "none",
-        "ready": True,
-    },
-    "error": {
-        "summary": "Setup needs attention",
-        "hardware": "unknown",
-        "cables": "check connections",
-        "wan": "not ready",
-        "setup": "stopped safely",
-        "error": "attention required",
-        "ready": False,
-    },
+_STATUS_SUMMARIES: Final[Mapping[str, str]] = {
+    "initializing-identity": "Initializing this router",
+    "detecting-hardware": "Checking router hardware",
+    "waiting-lan-carrier": "Connect the downstream LAN cable",
+    "waiting-wan-carrier": "Connect the Waveshare WAN cable",
+    "waiting-wan-dhcp": "Waiting for an Internet address",
+    "waiting-repository": "Waiting for the certified release",
+    "running-pre-reboot": "Installing router services",
+    "resuming-pre-reboot": "Safely resuming installation",
+    "rebooting-after-pre": "Router is restarting",
+    "waiting-desktop": "Waiting for the local desktop session",
+    "waiting-onboarding": "Ready for Proton sign-in",
+    "running-post-reboot": "Signing in and verifying Proton",
+    "rebooting-after-post": "Proton verified; router is restarting",
+    "waiting-final-services": "Waiting for router services",
+    "waiting-final-recovery": "Confirming final verification commit",
+    "running-final-verify": "Running final verification",
+    "ready": "Pi Router is ready",
+    "error": "Setup needs attention",
 }
 
 
@@ -730,8 +596,7 @@ class FrontendApplication:
                 return self._status_cached
             try:
                 code = self.backend.status()
-                presentation = _STATUS_PRESENTATION[code]
-                document = {"status": code, **presentation}
+                document = {"status": code, "summary": _STATUS_SUMMARIES[code]}
                 response = (
                     200,
                     json.dumps(document, separators=(",", ":")).encode("ascii"),
@@ -740,12 +605,6 @@ class FrontendApplication:
                 document = {
                     "status": "unavailable",
                     "summary": "Onboarding service is starting",
-                    "hardware": "unknown",
-                    "cables": "unknown",
-                    "wan": "unknown",
-                    "setup": "temporarily unavailable",
-                    "error": "none",
-                    "ready": False,
                 }
                 response = (
                     503,
@@ -1040,18 +899,25 @@ class OnboardingRequestHandler(BaseHTTPRequestHandler):
                     cookie=cookie,
                 )
                 return
-            if self.path == "/app.js":
+            if self.path == "/onboarding-app.js":
                 self._respond(
                     200,
                     self.application.assets.javascript,
                     "application/javascript; charset=utf-8",
                 )
                 return
-            if self.path == "/styles.css":
+            if self.path == "/src/web/styles.css":
                 self._respond(
                     200,
                     self.application.assets.stylesheet,
                     "text/css; charset=utf-8",
+                )
+                return
+            if self.path == "/src/web/favicon.svg":
+                self._respond(
+                    200,
+                    self.application.assets.favicon,
+                    "image/svg+xml",
                 )
                 return
             if self.path == "/api/status":

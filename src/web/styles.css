@@ -562,3 +562,46 @@ tbody tr:last-child td {
 #ipBlockCard {
   margin-bottom: 16px;
 }
+
+/* First-boot onboarding form */
+
+.onboarding-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.onboarding-form[hidden] {
+  display: none;
+}
+
+.onboarding-form label {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.onboarding-form input {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #bfc7cc;
+  border-radius: 3px;
+  background: #fff;
+  color: #000;
+  font: inherit;
+}
+
+.onboarding-form input:focus {
+  border-color: #102a43;
+  outline: 2px solid #102a43;
+  outline-offset: 1px;
+}
+
+.onboarding-form .toggle-button {
+  justify-self: start;
+  margin-top: 6px;
+}
+
+.onboarding-form-result:empty {
+  display: none;
+}

@@ -1,56 +1,45 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="referrer" content="no-referrer">
-    <meta name="pi-router-csrf" content="__PI_ROUTER_CSRF_TOKEN__">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="pi-router-csrf" content="__PI_ROUTER_CSRF_TOKEN__" />
     <title>Pi Router setup</title>
-    <link rel="stylesheet" href="/styles.css">
-    <script src="/app.js" defer></script>
+    <link rel="stylesheet" href="/src/web/styles.css" />
+    <script src="./onboarding-app.js" defer></script>
   </head>
   <body>
-    <main class="shell">
-      <header>
-        <p class="eyebrow">PI ROUTER · FIRST BOOT</p>
-        <h1>Finish Proton setup</h1>
-        <p class="lede">
-          This private page is available only on the downstream provisioning
-          network. Keep both Ethernet cables connected while setup finishes.
-        </p>
-      </header>
-
-      <section class="panel" aria-labelledby="status-heading">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">LIVE STATUS</p>
-            <h2 id="status-heading">Router checks</h2>
-          </div>
-          <span id="status-badge" class="badge">Connecting</span>
+    <header class="topbar">
+      <div class="brand">
+        <img
+          class="brand-icon"
+          src="/src/web/favicon.svg"
+          alt=""
+          aria-hidden="true"
+        >
+        <div class="brand-title">
+          Pi Router
+          <span class="brand-version">First boot setup</span>
         </div>
-        <p id="status-summary" class="summary" aria-live="polite">
-          Contacting the local onboarding service…
-        </p>
-        <dl class="status-grid">
-          <div><dt>Hardware</dt><dd id="status-hardware">Checking</dd></div>
-          <div><dt>Cables</dt><dd id="status-cables">Checking</dd></div>
-          <div><dt>WAN</dt><dd id="status-wan">Checking</dd></div>
-          <div><dt>Setup</dt><dd id="status-setup">Checking</dd></div>
-          <div><dt>Error</dt><dd id="status-error">None</dd></div>
-        </dl>
-      </section>
+      </div>
+    </header>
 
-      <section class="panel" aria-labelledby="signin-heading">
-        <p class="eyebrow">ONE-TIME ACTION</p>
-        <h2 id="signin-heading">Sign in to Proton VPN</h2>
+    <main class="shell">
+      <div id="status-summary" class="message" aria-live="polite">
+        Contacting the local onboarding service…
+      </div>
+
+      <section class="card clients-card" aria-labelledby="signin-heading">
+        <div class="clients-header">
+          <h2 id="signin-heading">Sign in to Proton VPN</h2>
+        </div>
         <p>
-          Credentials are sent directly to the local first-boot process for
-          this attempt. They are not written to an image-owned file or log.
+          Credentials are sent directly to the local first-boot process for this
+          attempt. They are not written to an image-owned file or log.
         </p>
-        <p>
-          Do not let the browser save this password for the router address.
-        </p>
-        <form id="onboarding-form" novalidate>
+        <p>Do not let the browser save this password for the router address.</p>
+        <form id="onboarding-form" class="onboarding-form" novalidate>
           <label for="proton-username">Proton username</label>
           <input
             id="proton-username"
@@ -61,7 +50,7 @@
             spellcheck="false"
             maxlength="254"
             required
-          >
+          />
 
           <label for="proton-password">Proton password</label>
           <input
@@ -73,27 +62,28 @@
             spellcheck="false"
             maxlength="1024"
             required
-          >
+          />
 
-          <button id="submit-button" type="submit">Continue securely</button>
-          <p id="form-result" class="form-result" aria-live="polite"></p>
+          <button id="submit-button" class="toggle-button remove" type="submit">
+            Continue securely
+          </button>
+          <p
+            id="form-result"
+            class="message onboarding-form-result"
+            aria-live="polite"
+          ></p>
         </form>
-        <p id="production-handoff" class="handoff" hidden aria-live="polite">
-          After the automatic reboot, wait up to five minutes, reconnect to
-          the downstream LAN if needed, then open
+        <p
+          id="production-handoff"
+          class="message success"
+          hidden
+          aria-live="polite"
+        >
+          After the automatic reboot, wait up to five minutes, reconnect to the
+          downstream LAN if needed, then open
           <a href="http://192.168.50.1:8080/">http://192.168.50.1:8080/</a>.
         </p>
       </section>
-
-      <aside class="notice">
-        <strong>Certificate notice</strong>
-        <p>
-          This router creates its own unique certificate on first boot. Your
-          browser may show a one-time warning because no public certificate
-          authority signs private IP addresses. Continue only while connected
-          to the physically trusted provisioning LAN.
-        </p>
-      </aside>
     </main>
   </body>
 </html>

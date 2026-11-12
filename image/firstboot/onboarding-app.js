@@ -13,13 +13,7 @@
   const submitButton = document.getElementById("submit-button");
   const result = document.getElementById("form-result");
   const productionHandoff = document.getElementById("production-handoff");
-  const statusBadge = document.getElementById("status-badge");
   const statusSummary = document.getElementById("status-summary");
-  const statusHardware = document.getElementById("status-hardware");
-  const statusCables = document.getElementById("status-cables");
-  const statusWan = document.getElementById("status-wan");
-  const statusSetup = document.getElementById("status-setup");
-  const statusError = document.getElementById("status-error");
   const encoder = new TextEncoder();
   let onboardingSubmitted = false;
   let runningPostObserved = false;
@@ -93,15 +87,8 @@
       showProductionHandoff();
       form.hidden = true;
     }
-    statusBadge.textContent = documentValue.ready ? "Ready" : documentValue.status;
-    statusBadge.classList.toggle("ready", Boolean(documentValue.ready));
     statusSummary.textContent = documentValue.summary;
-    statusHardware.textContent = documentValue.hardware;
-    statusCables.textContent = documentValue.cables;
-    statusWan.textContent = documentValue.wan;
-    statusSetup.textContent = documentValue.setup;
-    statusError.textContent = documentValue.error;
-    if (documentValue.ready) {
+    if (documentValue.status === "ready") {
       form.hidden = true;
     }
   }
@@ -116,7 +103,6 @@
         referrerPolicy: "no-referrer"
       });
       if (response.status === 401) {
-        statusBadge.textContent = "Refreshing session";
         statusSummary.textContent = "Creating a new local browser session.";
         window.location.reload();
         return;
@@ -127,14 +113,12 @@
       }
     } catch (_error) {
       if (onboardingSubmitted) {
-        statusBadge.textContent = "Router restarting";
         statusSummary.textContent =
           "The onboarding service disconnected. This is expected while the router reboots.";
         result.textContent =
           "Wait for the reboot to finish, then use the production address below.";
         showProductionHandoff();
       } else {
-        statusBadge.textContent = "Reconnecting";
         statusSummary.textContent =
           "The router may be restarting. This page will keep checking.";
       }

@@ -1389,7 +1389,7 @@ class UnitContractTests(unittest.TestCase):
         )
         self.assertEqual(
             image_state.STATUS_CODES,
-            frozenset(onboarding_frontend._STATUS_PRESENTATION),
+            frozenset(onboarding_frontend._STATUS_SUMMARIES),
         )
 
     def test_all_controller_terminal_codes_exist_in_state_schema(self) -> None:

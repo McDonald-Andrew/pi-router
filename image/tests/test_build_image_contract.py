@@ -143,6 +143,7 @@ class BuildImageContractTests(unittest.TestCase):
             "pi-router-onboarding.sysusers",
             "pi_router_image_controller.py",
             "onboarding-index.html",
+            "onboarding-app.js",
         ):
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, source)
@@ -158,6 +159,18 @@ class BuildImageContractTests(unittest.TestCase):
         )
         self.assertIn("systemctl --root=", source)
         self.assertIn("enable pi-router-firstboot.timer", source)
+
+    def test_onboarding_reuses_the_production_stylesheet(self) -> None:
+        customizer = self.read("customize-rootfs")
+        rootfs_audit = self.read("tests/verify-rootfs")
+
+        self.assertFalse((IMAGE_DIR / "firstboot/onboarding-styles.css").exists())
+        self.assertIn('"$release_path/web/styles.css"', customizer)
+        self.assertIn('"$release_path/web/styles.css"', rootfs_audit)
+        self.assertIn('"$release_path/web/favicon.svg"', customizer)
+        self.assertIn('"$release_path/web/favicon.svg"', rootfs_audit)
+        self.assertNotIn("onboarding-styles.css", customizer)
+        self.assertNotIn("onboarding-styles.css", rootfs_audit)
 
     def test_release_permissions_are_normalized_and_audited(
         self,

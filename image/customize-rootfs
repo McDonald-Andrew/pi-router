@@ -174,8 +174,11 @@ install -D -o root -g root -m 0644 \
     "$firstboot_source/onboarding-app.js" \
     "$root/usr/local/share/pi-router-onboarding/app.js"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/onboarding-styles.css" \
+    "$release_path/web/styles.css" \
     "$root/usr/local/share/pi-router-onboarding/styles.css"
+install -D -o root -g root -m 0644 \
+    "$release_path/web/favicon.svg" \
+    "$root/usr/local/share/pi-router-onboarding/favicon.svg"
 
 systemd-sysusers --root="$root" pi-router-onboarding.conf
 
