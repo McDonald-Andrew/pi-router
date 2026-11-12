@@ -1,6 +1,6 @@
 name: Pi Router Release
 
-run-name: Build release v${{ inputs.version }}
+run-name: Build v${{ inputs.version }}
 
 on:
   workflow_dispatch:
