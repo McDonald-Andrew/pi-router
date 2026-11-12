@@ -117,7 +117,7 @@ Keep the downstream network physically controlled during onboarding. The tempora
 6. Visit `https://192.168.50.1:8080`. The site becomes available only after that first reboot and the local desktop/onboarding services are ready.
 7. Continue past the one-time self-signed-certificate warning only when the browser is attached to the physically trusted downstream LAN.
 8. Wait until the page reports **Ready for Proton sign-in**.
-9. Enter the Proton username and password. Do not let the browser save the password for the router address.
+9. Enter the Proton username and password. Both fields display the same fixed mask once non-empty, so the visible mask does not reveal either value's length. Do not let the browser save the password for the router address.
 10. Leave both Ethernet cables connected and do not remove power while the Pi verifies Proton and performs its final reboot.
 
 The page reports hardware, cable, WAN, setup, and sanitized error status. A failed Proton authentication attempt remains in provisioning mode and permits another attempt. It does not promote normal LAN gateway or DNS service.
