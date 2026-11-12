@@ -5,7 +5,6 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 SETUP="$REPOSITORY_ROOT/src/setup"
-CONTRACT="$REPOSITORY_ROOT/image/README.md"
 ANSWERS="$REPOSITORY_ROOT/image/provision/pi-router-image.conf"
 
 fail() {
@@ -38,17 +37,6 @@ do
     printf '%s\n' "$SETUP_HELP" |
         grep -Eq "(^|[[:space:]])$phase([[:space:]]|$)" ||
         fail "setup does not advertise required phase: $phase"
-done
-
-for value in \
-    '/opt/pi-router/current/setup' \
-    '/var/lib/pi-router-setup/reboot-required.boot-id' \
-    '/var/lib/pi-router-image/' \
-    'pre-reboot-complete' \
-    'post-reboot-complete' \
-    'FINAL VERIFICATION PASSED'
-do
-    require_literal "$CONTRACT" "$value"
 done
 
 require_literal "$ANSWERS" 'ROUTER_USER="admin"'

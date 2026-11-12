@@ -255,9 +255,9 @@ setup's installation logic or pre-generated machine-specific configuration.
 
 - [ ] Flash the immutable release with Raspberry Pi Imager.
 - [ ] Test the exact Pi 5 and Waveshare `10ec:8168` adapter.
-- [ ] Complete every happy-path, cable, WAN, Proton, listener, routing, browser,
-  updater, identity, and power-interruption row in
-  `image/HARDWARE-CERTIFICATION.md`.
+- [ ] Complete happy-path, cable, WAN, Proton, listener, routing, browser,
+  updater, identity, and power-interruption testing against the exact release
+  image.
 - [ ] Validate the PASS receipt against the exact image and manifest.
 - [ ] Preserve the exact certified bytes without rebuilding before release.
 
