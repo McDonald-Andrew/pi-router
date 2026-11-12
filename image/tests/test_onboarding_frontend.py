@@ -15,6 +15,7 @@ from pathlib import Path
 
 FIRSTBOOT = Path(__file__).resolve().parents[1] / "firstboot"
 REPOSITORY_ROOT = FIRSTBOOT.parents[1]
+WEB = REPOSITORY_ROOT / "src/web"
 os.sys.path.insert(0, str(FIRSTBOOT))
 
 import pi_router_onboarding_frontend as frontend  # noqa: E402
@@ -530,8 +531,8 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0", service)
 
     def test_browser_assets_disable_password_saving_and_recover_sessions(self) -> None:
-        index = (FIRSTBOOT / "onboarding-index.html").read_text(encoding="utf-8")
-        javascript = (FIRSTBOOT / "onboarding-app.js").read_text(encoding="utf-8")
+        index = (WEB / "onboarding-index.html").read_text(encoding="utf-8")
+        javascript = (WEB / "onboarding-app.js").read_text(encoding="utf-8")
         self.assertGreaterEqual(index.count('autocomplete="off"'), 2)
         self.assertGreaterEqual(index.count('autocapitalize="none"'), 2)
         self.assertGreaterEqual(index.count('spellcheck="false"'), 2)

@@ -147,6 +147,10 @@ class BuildImageContractTests(unittest.TestCase):
         ):
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, source)
+        self.assertIn('"$release_path/web/onboarding-index.html"', source)
+        self.assertIn('"$release_path/web/onboarding-app.js"', source)
+        self.assertNotIn('"$firstboot_source/onboarding-index.html"', source)
+        self.assertNotIn('"$firstboot_source/onboarding-app.js"', source)
         self.assertIn(
             'systemd-sysusers --root="$root" pi-router-onboarding.conf', source
         )

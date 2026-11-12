@@ -168,10 +168,10 @@ install -D -o root -g root -m 0644 \
     "$firstboot_source/pi-router-onboarding.sysusers" \
     "$root/usr/lib/sysusers.d/pi-router-onboarding.conf"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/onboarding-index.html" \
+    "$release_path/web/onboarding-index.html" \
     "$root/usr/local/share/pi-router-onboarding/index.html"
 install -D -o root -g root -m 0644 \
-    "$firstboot_source/onboarding-app.js" \
+    "$release_path/web/onboarding-app.js" \
     "$root/usr/local/share/pi-router-onboarding/app.js"
 install -D -o root -g root -m 0644 \
     "$release_path/web/styles.css" \

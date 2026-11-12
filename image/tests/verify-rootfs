@@ -402,7 +402,7 @@ assert_copy \
 for asset in onboarding-index.html onboarding-app.js; do
     target_name="${asset#onboarding-}"
     assert_copy \
-        "$asset_dir/$asset" \
+        "$release_path/web/$asset" \
         "$root/usr/local/share/pi-router-onboarding/$target_name" \
         "0:0:644" \
         "onboarding web asset"
