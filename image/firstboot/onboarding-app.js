@@ -18,6 +18,17 @@
   let onboardingSubmitted = false;
   let runningPostObserved = false;
 
+  function updateCredentialMask(field) {
+    const container = field.closest(".concealed-credential");
+    container.classList.toggle("has-value", field.value.length > 0);
+  }
+
+  for (const field of [usernameField, passwordField]) {
+    field.addEventListener("input", () => updateCredentialMask(field));
+    field.addEventListener("change", () => updateCredentialMask(field));
+    updateCredentialMask(field);
+  }
+
   function showProductionHandoff() {
     productionHandoff.hidden = false;
   }
@@ -147,6 +158,8 @@
     } finally {
       usernameField.value = "";
       passwordField.value = "";
+      updateCredentialMask(usernameField);
+      updateCredentialMask(passwordField);
     }
     username = "";
     password = "";

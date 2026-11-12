@@ -17,7 +17,7 @@
           src="/src/web/favicon.svg"
           alt=""
           aria-hidden="true"
-        >
+        />
         <div class="brand-title">
           Pi Router
           <span class="brand-version">First boot setup</span>
@@ -39,33 +39,47 @@
           attempt. They are not written to an image-owned file or log.
         </p>
         <p>Do not let the browser save this password for the router address.</p>
+        <p>
+          Both fields use the same fixed mask after typing, regardless of the
+          number of characters entered.
+        </p>
         <form id="onboarding-form" class="onboarding-form" novalidate>
           <label for="proton-username">Proton username</label>
-          <input
-            id="proton-username"
-            name="username"
-            type="text"
-            autocomplete="off"
-            autocapitalize="none"
-            spellcheck="false"
-            maxlength="254"
-            required
-          />
+          <div class="concealed-credential">
+            <input
+              id="proton-username"
+              name="username"
+              type="password"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="254"
+              required
+            />
+            <span class="concealed-credential-mask" aria-hidden="true">
+              &#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;
+            </span>
+          </div>
 
           <label for="proton-password">Proton password</label>
-          <input
-            id="proton-password"
-            name="password"
-            type="password"
-            autocomplete="off"
-            autocapitalize="none"
-            spellcheck="false"
-            maxlength="1024"
-            required
-          />
+          <div class="concealed-credential">
+            <input
+              id="proton-password"
+              name="password"
+              type="password"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              maxlength="1024"
+              required
+            />
+            <span class="concealed-credential-mask" aria-hidden="true">
+              &#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;
+            </span>
+          </div>
 
           <button id="submit-button" class="toggle-button remove" type="submit">
-            Continue securely
+            Sign-in
           </button>
           <p
             id="form-result"

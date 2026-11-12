@@ -597,6 +597,53 @@ tbody tr:last-child td {
   outline-offset: 1px;
 }
 
+/*
+ * Keep credential length out of screenshots and recordings. The real input
+ * remains focusable and editable but fully transparent; a fixed-size mask is
+ * shown whenever it contains any value.
+ */
+.concealed-credential {
+  position: relative;
+  border: 1px solid #bfc7cc;
+  border-radius: 3px;
+  background: #fff;
+}
+
+.concealed-credential:focus-within {
+  border-color: #102a43;
+  outline: 2px solid #102a43;
+  outline-offset: 1px;
+}
+
+.onboarding-form .concealed-credential input,
+.onboarding-form .concealed-credential input:focus {
+  position: relative;
+  z-index: 1;
+  display: block;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  opacity: 0;
+}
+
+.concealed-credential-mask {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 10px;
+  display: none;
+  pointer-events: none;
+  color: #000;
+  letter-spacing: 2px;
+  transform: translateY(-50%);
+}
+
+.concealed-credential.has-value .concealed-credential-mask {
+  display: block;
+}
+
 .onboarding-form .toggle-button {
   justify-self: start;
   margin-top: 6px;

@@ -14,6 +14,7 @@ from pathlib import Path
 
 
 FIRSTBOOT = Path(__file__).resolve().parents[1] / "firstboot"
+REPOSITORY_ROOT = FIRSTBOOT.parents[1]
 os.sys.path.insert(0, str(FIRSTBOOT))
 
 import pi_router_onboarding_frontend as frontend  # noqa: E402
@@ -511,7 +512,12 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertGreaterEqual(index.count('autocomplete="off"'), 2)
         self.assertGreaterEqual(index.count('autocapitalize="none"'), 2)
         self.assertGreaterEqual(index.count('spellcheck="false"'), 2)
+        self.assertEqual(index.count('type="password"'), 2)
+        self.assertNotIn('type="text"', index)
+        self.assertEqual(index.count('class="concealed-credential"'), 2)
+        self.assertEqual(index.count('class="concealed-credential-mask"'), 2)
         self.assertIn("Do not let the browser save this password", index)
+        self.assertIn("same fixed mask", index)
         self.assertIn('href="/src/web/styles.css"', index)
         self.assertIn('src="/src/web/favicon.svg"', index)
         self.assertIn('class="brand-icon"', index)
@@ -538,6 +544,15 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("router will reboot automatically", javascript)
         self.assertIn("onboarding service disconnected", javascript)
         self.assertIn("productionHandoff.hidden", javascript)
+        self.assertIn("function updateCredentialMask(field)", javascript)
+        self.assertIn('field.value.length > 0', javascript)
+
+        stylesheet = (REPOSITORY_ROOT / "src/web/styles.css").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(".concealed-credential.has-value", stylesheet)
+        self.assertIn("caret-color: transparent", stylesheet)
+        self.assertIn("opacity: 0", stylesheet)
 
 
 class TLSDispatchTests(unittest.TestCase):
