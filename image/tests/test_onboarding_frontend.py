@@ -491,6 +491,12 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("response.status === 401", javascript)
         self.assertIn("runningPostObserved", javascript)
         self.assertIn("Sign-in did not complete", javascript)
+        self.assertIn('id="production-handoff"', index)
+        self.assertIn("http://192.168.50.1:8080/", index)
+        self.assertIn('documentValue.status === "rebooting-after-post"', javascript)
+        self.assertIn("router will reboot automatically", javascript)
+        self.assertIn("onboarding service disconnected", javascript)
+        self.assertIn("productionHandoff.hidden", javascript)
 
 
 class TLSDispatchTests(unittest.TestCase):

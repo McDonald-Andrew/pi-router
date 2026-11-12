@@ -127,6 +127,9 @@ install -D -o root -g root -m 0755 \
 install -D -o root -g root -m 0644 \
     "$firstboot_source/pi-router-sshd.conf" \
     "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf"
+install -D -o root -g root -m 0644 \
+    "$firstboot_source/pi-router-ssh-retry.conf" \
+    "$root/etc/systemd/system/ssh.service.d/60-pi-router-address-retry.conf"
 
 for module in \
     pi_router_image_state.py \

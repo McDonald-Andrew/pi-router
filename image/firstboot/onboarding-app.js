@@ -12,6 +12,7 @@
   const passwordField = document.getElementById("proton-password");
   const submitButton = document.getElementById("submit-button");
   const result = document.getElementById("form-result");
+  const productionHandoff = document.getElementById("production-handoff");
   const statusBadge = document.getElementById("status-badge");
   const statusSummary = document.getElementById("status-summary");
   const statusHardware = document.getElementById("status-hardware");
@@ -22,6 +23,14 @@
   const encoder = new TextEncoder();
   let onboardingSubmitted = false;
   let runningPostObserved = false;
+
+  function showProductionHandoff() {
+    productionHandoff.hidden = false;
+  }
+
+  function hideProductionHandoff() {
+    productionHandoff.hidden = true;
+  }
 
   function containsForbidden(value) {
     return /[\u0000-\u001f\u007f]/u.test(value);
@@ -74,8 +83,15 @@
         "Sign-in did not complete. Verify the credentials and try again.";
       onboardingSubmitted = false;
       runningPostObserved = false;
+      hideProductionHandoff();
       submitButton.disabled = false;
       form.hidden = false;
+    }
+    if (onboardingSubmitted && documentValue.status === "rebooting-after-post") {
+      result.textContent =
+        "Proton was verified. The router is rebooting, so this page will disconnect.";
+      showProductionHandoff();
+      form.hidden = true;
     }
     statusBadge.textContent = documentValue.ready ? "Ready" : documentValue.status;
     statusBadge.classList.toggle("ready", Boolean(documentValue.ready));
@@ -110,8 +126,18 @@
         presentStatus(documentValue);
       }
     } catch (_error) {
-      statusBadge.textContent = "Reconnecting";
-      statusSummary.textContent = "The router may be restarting. This page will keep checking.";
+      if (onboardingSubmitted) {
+        statusBadge.textContent = "Router restarting";
+        statusSummary.textContent =
+          "The onboarding service disconnected. This is expected while the router reboots.";
+        result.textContent =
+          "Wait for the reboot to finish, then use the production address below.";
+        showProductionHandoff();
+      } else {
+        statusBadge.textContent = "Reconnecting";
+        statusSummary.textContent =
+          "The router may be restarting. This page will keep checking.";
+      }
     } finally {
       window.setTimeout(refreshStatus, 3000);
     }
@@ -160,7 +186,9 @@
       if (response.status === 202) {
         onboardingSubmitted = true;
         runningPostObserved = false;
-        result.textContent = "Sign-in started. Keep this page open while the router verifies Proton.";
+        result.textContent =
+          "Sign-in started. If verification succeeds, the router will reboot automatically and this page will disconnect.";
+        showProductionHandoff();
       } else if (response.status === 429) {
         result.textContent = "Too many attempts. Wait before trying again.";
       } else if (response.status === 423) {

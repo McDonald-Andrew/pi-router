@@ -309,6 +309,11 @@ assert_copy \
     "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf" \
     "0:0:644" \
     "LAN-only admin SSH policy"
+assert_copy \
+    "$asset_dir/pi-router-ssh-retry.conf" \
+    "$root/etc/systemd/system/ssh.service.d/60-pi-router-address-retry.conf" \
+    "0:0:644" \
+    "LAN-address SSH startup retry policy"
 grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf([[:space:]]|$)' \
     "$root/etc/ssh/sshd_config" ||
     fail "base sshd_config does not load the image-owned policy"

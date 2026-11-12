@@ -187,6 +187,17 @@ button:disabled {
   color: var(--warning);
 }
 
+.handoff {
+  margin: 1rem 0 0;
+  padding: 0.9rem 1rem;
+  border-left: 3px solid var(--accent);
+}
+
+.handoff a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .notice {
   margin-top: 1.25rem;
   padding: 1rem 1.2rem;

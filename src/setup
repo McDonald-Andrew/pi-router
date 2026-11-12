@@ -379,7 +379,12 @@ render_router_config() {
     set_assignment BYPASS_TABLE "$BYPASS_TABLE"
     set_assignment BYPASS_RULE_PRIORITY "$BYPASS_RULE_PRIORITY"
 
-    run_root mkdir -p "$(dirname "$destination")"
+    run_root install \
+        -d \
+        -o root \
+        -g root \
+        -m 0755 \
+        "$(dirname "$destination")"
 
     run_root install \
         -o root \
@@ -448,7 +453,16 @@ install_system_source() {
     [[ -f "$source" ]] ||
         die "missing source file: $source"
 
-    run_root mkdir -p "$(dirname "$destination")"
+    # The image firstboot service deliberately runs with UMask=0077, unlike
+    # the normal interactive installer environment. Specify 0755 here so
+    # system service users can traverse shared artifact directories; this is
+    # the same effective mode the original installer receives under 0022.
+    run_root install \
+        -d \
+        -o root \
+        -g root \
+        -m 0755 \
+        "$(dirname "$destination")"
 
     run_root install \
         -m "$mode" \
@@ -542,7 +556,12 @@ install_dispatcher_hardlink() {
     [[ -f "$source" ]] ||
         die "proton-bypass must be installed before dispatcher"
 
-    run_root mkdir -p "$(dirname "$destination")"
+    run_root install \
+        -d \
+        -o root \
+        -g root \
+        -m 0755 \
+        "$(dirname "$destination")"
     run_root rm -f "$destination"
     run_root ln "$source" "$destination"
 
@@ -961,7 +980,12 @@ phase_bypass() {
 
     validate_bypass_file "$temporary"
 
-    run_root mkdir -p "$(dirname "$destination")"
+    run_root install \
+        -d \
+        -o root \
+        -g root \
+        -m 0755 \
+        "$(dirname "$destination")"
 
     run_root install \
         -o root \
@@ -3800,6 +3824,26 @@ verify_file_mode_owner() {
         die "unexpected metadata for $path: $actual"
 }
 
+verify_directory_mode_owner() {
+    local path="$1"
+    local owner="$2"
+    local group="$3"
+    local mode="$4"
+    local actual
+
+    [[ -d "$path" && ! -L "$path" ]] ||
+        die "required directory is missing: $path"
+
+    actual="$(
+        run_root stat \
+            -c '%U:%G:%a' \
+            "$path"
+    )"
+
+    [[ "$actual" == "$owner:$group:$mode" ]] ||
+        die "unexpected metadata for $path: $actual"
+}
+
 verify_exact_symlink() {
     local link="$1"
     local expected="$2"
@@ -4208,6 +4252,10 @@ verify_final_artifact_tree() {
     note "static installed artifacts match repository sources"
 
     verify_lightdm_base_configuration
+
+    verify_directory_mode_owner \
+        "$(root_path /usr/local/share/pi-router-web)" \
+        root root 755
 
     verify_file_mode_owner \
         "$(root_path /etc/proton-bypass/devices.conf)" \

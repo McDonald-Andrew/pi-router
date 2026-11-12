@@ -139,6 +139,7 @@ class BuildImageContractTests(unittest.TestCase):
             "pi-router-onboarding-backend.service",
             "pi-router-policy-rc.d",
             "pi-router-sshd.conf",
+            "pi-router-ssh-retry.conf",
             "pi-router-onboarding.sysusers",
             "pi_router_image_controller.py",
             "onboarding-index.html",
@@ -207,11 +208,43 @@ class BuildImageContractTests(unittest.TestCase):
 
     def test_ssh_policy_does_not_override_imager_authentication_choice(self) -> None:
         source = self.read("firstboot/pi-router-sshd.conf")
+        retry = self.read("firstboot/pi-router-ssh-retry.conf")
 
         self.assertIn("ListenAddress 192.168.50.1", source)
         self.assertIn("AllowUsers admin", source)
         self.assertNotIn("PasswordAuthentication", source)
         self.assertNotIn("KbdInteractiveAuthentication", source)
+        self.assertIn("After=NetworkManager.service", retry)
+        self.assertIn("StartLimitIntervalSec=0", retry)
+        self.assertIn("Restart=on-failure", retry)
+        self.assertIn("RestartPreventExitStatus=", retry)
+        self.assertIn("RestartSec=5s", retry)
+
+        customizer = self.read("customize-rootfs")
+        rootfs_audit = self.read("tests/verify-rootfs")
+        target = (
+            "/etc/systemd/system/ssh.service.d/"
+            "60-pi-router-address-retry.conf"
+        )
+        self.assertIn(target, customizer)
+        self.assertIn(target, rootfs_audit)
+
+    def test_system_installer_normalizes_parent_directory_permissions(self) -> None:
+        setup = (IMAGE_DIR.parent / "src" / "setup").read_text(encoding="utf-8")
+        start = setup.index("install_system_source()")
+        end = setup.index("install_system_tree()", start)
+        installer = setup[start:end]
+
+        self.assertNotIn("mkdir -p", installer)
+        self.assertIn("run_root install", installer)
+        self.assertIn("-o root", installer)
+        self.assertIn("-g root", installer)
+        self.assertIn("-m 0755", installer)
+        self.assertIn("verify_directory_mode_owner()", setup)
+        self.assertIn(
+            '"$(root_path /usr/local/share/pi-router-web)"',
+            setup,
+        )
 
     def test_github_release_limit_is_fail_closed_and_recorded(self) -> None:
         source = self.read("build")
