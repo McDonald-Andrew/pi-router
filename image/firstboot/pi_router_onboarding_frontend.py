@@ -32,7 +32,7 @@ from typing import Callable, Final, Mapping, Protocol
 DEFAULT_CONFIG_PATH: Final = Path("/etc/pi-router.conf")
 DEFAULT_ASSET_DIRECTORY: Final = Path("/usr/local/share/pi-router-onboarding")
 DEFAULT_SOCKET_PATH: Final = Path("/run/pi-router-image/onboarding.sock")
-DEFAULT_PORT: Final = 8443
+DEFAULT_PORT: Final = 8080
 
 CREDENTIAL_VERSION: Final = 1
 MAX_USERNAME_BYTES: Final = 254

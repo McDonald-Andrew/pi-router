@@ -114,7 +114,7 @@ Keep the downstream network physically controlled during onboarding. The tempora
 3. Power the Pi Router.
 4. Allow the Pi to complete its pre-reboot work and automatic first reboot.
 5. Connect a browser device only to the downstream LAN. Renew its DHCP lease or briefly reconnect it after the reboot if it does not receive a provisioning address.
-6. Visit `https://192.168.50.1:8443`. The site becomes available only after that first reboot and the local desktop/onboarding services are ready.
+6. Visit `https://192.168.50.1:8080`. The site becomes available only after that first reboot and the local desktop/onboarding services are ready.
 7. Continue past the one-time self-signed-certificate warning only when the browser is attached to the physically trusted downstream LAN.
 8. Wait until the page reports **Ready for Proton sign-in**.
 9. Enter the Proton username and password. Do not let the browser save the password for the router address.
@@ -124,7 +124,7 @@ The page reports hardware, cable, WAN, setup, and sanitized error status. A fail
 
 After successful sign-in the Pi reboots, waits for its production services and Proton tunnel, and runs the canonical final verification. Normal operation is authorized only after `FINAL VERIFICATION PASSED` and the image-owned ready receipt are present.
 
-The temporary onboarding site intentionally stops before the final reboot, so its disappearance after successful Proton verification is expected. Wait up to five minutes, reconnect the client to the downstream LAN if needed, and then open `http://192.168.50.1:8080/`. If that production interface is still unavailable after ten minutes, treat setup as failed rather than continuing to wait.
+The temporary HTTPS onboarding site intentionally stops before the final reboot, so its disappearance after successful Proton verification is expected. Wait up to five minutes, reconnect the client to the downstream LAN if needed, and then follow the displayed link to the production interface at `http://192.168.50.1:8080/`. The port remains `8080`, but the production interface uses HTTP. If it is still unavailable after ten minutes, treat setup as failed rather than continuing to wait.
 
 ## Waiting and retry behavior
 

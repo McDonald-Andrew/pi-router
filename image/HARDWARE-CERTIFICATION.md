@@ -90,8 +90,8 @@ The expected non-loopback server allowlist is:
 |---|---|
 | Before provisioning starts | No router listener; if SSH was selected in Imager, TCP 22 may listen only on the provisioning LAN |
 | Provisioning DHCP active | `dnsmasq` DHCP UDP 67 and DNS TCP/UDP 53, LAN only; optional selected SSH remains LAN-only |
-| Browser onboarding active | Provisioning `dnsmasq` listeners plus HTTPS TCP 8443, LAN only; optional selected SSH remains LAN-only |
-| Proton verified/final/ready | Production `dnsmasq` DHCP/DNS and production UI TCP 8080, LAN only; TCP 8443 absent; optional selected SSH remains LAN-only |
+| Browser onboarding active | Provisioning `dnsmasq` listeners plus onboarding HTTPS TCP 8080, LAN only; optional selected SSH remains LAN-only |
+| Proton verified/final/ready | Production `dnsmasq` DHCP/DNS and production HTTP TCP 8080, LAN only; onboarding HTTPS is absent; optional selected SSH remains LAN-only |
 
 Record `ss --listening --numeric --tcp --udp --process` at each lifecycle point.
 Loopback-only operating-system sockets may be recorded separately, but any new

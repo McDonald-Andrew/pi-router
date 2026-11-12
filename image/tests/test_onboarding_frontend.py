@@ -294,7 +294,7 @@ class HTTPFrontendTests(unittest.TestCase):
         )
         self.backend = FakeBackend()
         settings = frontend.FrontendSettings(
-            "127.0.0.1", port=8443, provisioning_network="127.0.0.0/8"
+            "127.0.0.1", port=8080, provisioning_network="127.0.0.0/8"
         )
         application = frontend.FrontendApplication(
             settings,
@@ -327,7 +327,7 @@ class HTTPFrontendTests(unittest.TestCase):
     ) -> tuple[http.client.HTTPResponse, bytes]:
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=2)
         connection.putrequest(method, target, skip_host=True)
-        values = {"Host": "127.0.0.1:8443", **(headers or {})}
+        values = {"Host": "127.0.0.1:8080", **(headers or {})}
         if body is not None and "Content-Length" not in values:
             values["Content-Length"] = str(len(body))
         for name, value in values.items():
@@ -415,10 +415,10 @@ class HTTPFrontendTests(unittest.TestCase):
     def test_rejects_query_absolute_origin_and_wrong_host(self) -> None:
         query, _body = self.request("GET", "/?anything=1")
         self.assertEqual(query.status, 400)
-        absolute, _body = self.request("GET", "https://127.0.0.1:8443/")
+        absolute, _body = self.request("GET", "https://127.0.0.1:8080/")
         self.assertEqual(absolute.status, 400)
         wrong_host, _body = self.request(
-            "GET", "/", headers={"Host": "router.local:8443"}
+            "GET", "/", headers={"Host": "router.local:8080"}
         )
         self.assertEqual(wrong_host.status, 400)
 
@@ -447,7 +447,7 @@ class HTTPFrontendTests(unittest.TestCase):
             "/api/onboard",
             headers={
                 "Cookie": cookie,
-                "Origin": "https://127.0.0.1:8443",
+                "Origin": "https://127.0.0.1:8080",
                 "X-Pi-Router-CSRF": csrf,
                 "Content-Type": frontend.CREDENTIAL_CONTENT_TYPE,
             },
@@ -470,7 +470,7 @@ class HTTPFrontendTests(unittest.TestCase):
                 "/api/onboard",
                 headers={
                     "Cookie": cookie,
-                    "Origin": "https://127.0.0.1:8443",
+                    "Origin": "https://127.0.0.1:8080",
                     "X-Pi-Router-CSRF": csrf,
                     "Content-Type": frontend.CREDENTIAL_CONTENT_TYPE,
                 },
@@ -488,6 +488,7 @@ class ServiceDefinitionTests(unittest.TestCase):
         service = (FIRSTBOOT / "pi-router-onboarding.service").read_text(
             encoding="utf-8"
         )
+        self.assertEqual(frontend.DEFAULT_PORT, 8080)
         self.assertNotIn("[Install]", service)
         self.assertIn("User=pi-router-onboarding", service)
         self.assertIn("Requires=pi-router-onboarding-backend.service", service)
@@ -497,7 +498,9 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("LoadCredential=tls.key:", service)
         self.assertIn("RestrictAddressFamilies=AF_INET AF_UNIX", service)
         self.assertIn("IPAddressDeny=any", service)
-        self.assertIn("SocketBindAllow=ipv4:tcp:8443", service)
+        self.assertIn("--port 8080", service)
+        self.assertIn("SocketBindAllow=ipv4:tcp:8080", service)
+        self.assertNotIn("8443", service)
         self.assertIn("LimitCORE=0", service)
         self.assertIn("MemorySwapMax=0", service)
         self.assertNotIn("0.0.0.0", service)
@@ -579,7 +582,7 @@ class TLSDispatchTests(unittest.TestCase):
         )
         application = frontend.FrontendApplication(
             frontend.FrontendSettings(
-                "127.0.0.1", port=8443, provisioning_network="127.0.0.0/8"
+                "127.0.0.1", port=8080, provisioning_network="127.0.0.0/8"
             ),
             assets,
             FakeBackend(),
