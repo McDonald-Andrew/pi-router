@@ -597,7 +597,15 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn(".concealed-credential.has-value", stylesheet)
         self.assertRegex(
             stylesheet,
-            r"(?s)\.concealed-credential\s*\{.*?width:\s*50%;",
+            r"(?s)\.concealed-credential\s*\{.*?width:\s*50%;.*?justify-self:\s*center;",
+        )
+        self.assertRegex(
+            stylesheet,
+            r"(?s)\.onboarding-form label\s*\{.*?width:\s*50%;.*?justify-self:\s*center;.*?text-align:\s*center;",
+        )
+        self.assertRegex(
+            stylesheet,
+            r"(?s)\.onboarding-form \.toggle-button\s*\{.*?justify-self:\s*center;",
         )
         self.assertIn("caret-color: transparent", stylesheet)
         self.assertIn("opacity: 0", stylesheet)

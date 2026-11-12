@@ -576,7 +576,10 @@ tbody tr:last-child td {
 }
 
 .onboarding-form label {
+  width: 50%;
   margin-top: 4px;
+  justify-self: center;
+  text-align: center;
   font-size: 13px;
   font-weight: 600;
 }
@@ -605,6 +608,7 @@ tbody tr:last-child td {
 .concealed-credential {
   position: relative;
   width: 50%;
+  justify-self: center;
   border: 1px solid #bfc7cc;
   border-radius: 3px;
   background: #fff;
@@ -646,6 +650,6 @@ tbody tr:last-child td {
 }
 
 .onboarding-form .toggle-button {
-  justify-self: start;
+  justify-self: center;
   margin-top: 6px;
 }
