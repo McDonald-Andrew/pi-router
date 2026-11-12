@@ -72,6 +72,7 @@ IP: Final = "/usr/sbin/ip"
 OPENSSL: Final = "/usr/bin/openssl"
 TLS_VALIDITY_DAYS: Final = 3650
 LIVE_CHECK_TIMEOUT_SECONDS: Final = 3
+SUCCESS_STATUS_GRACE_SECONDS: Final = 8.0
 
 STATUS_REQUEST: Final = b"STATUS\n"
 RESPONSE_ACCEPTED: Final = b"accepted\n"
@@ -358,7 +359,10 @@ class OnboardingBackend:
         expected_gid: int | None = 0,
         boot_id_override: str | None = None,
         release_override: ReleaseInfo | None = None,
+        success_status_grace_seconds: float = SUCCESS_STATUS_GRACE_SECONDS,
     ) -> None:
+        if success_status_grace_seconds < 0:
+            raise ValueError("success status grace must not be negative")
         self.paths = paths or BackendPaths()
         self.store = store or ImageStateStore(
             self.paths.state_directory,
@@ -371,6 +375,7 @@ class OnboardingBackend:
         self.expected_gid = expected_gid
         self.boot_id_override = boot_id_override
         self.release_override = release_override
+        self.success_status_grace_seconds = success_status_grace_seconds
         self._worker_launcher = worker_launcher or self._launch_thread
         self._lock_factory = lock_factory or self._firstboot_lock
         self._guard = threading.Lock()
@@ -663,6 +668,10 @@ class OnboardingBackend:
         self.store.write_status("post-reboot-complete", "rebooting-after-post")
         with self._guard:
             self._accepting = False
+            # Expose the committed success status while the broker remains
+            # available so the browser can arm its automatic HTTP handoff.
+            self._worker_active = False
+        self.stop_event.wait(self.success_status_grace_seconds)
         self.runner.run((SYSTEMCTL, "--no-block", "reboot"))
         self.stop_event.set()
 

@@ -124,7 +124,7 @@ The page reports hardware, cable, WAN, setup, and sanitized error status. A fail
 
 After successful sign-in the Pi reboots, waits for its production services and Proton tunnel, and runs the canonical final verification. Normal operation is authorized only after `FINAL VERIFICATION PASSED` and the image-owned ready receipt are present.
 
-The temporary HTTPS onboarding site intentionally stops before the final reboot, so its disappearance after successful Proton verification is expected. Wait up to five minutes, reconnect the client to the downstream LAN if needed, and then follow the displayed link to the production interface at `http://192.168.50.1:8080/`. The port remains `8080`, but the production interface uses HTTP. If it is still unavailable after ten minutes, treat setup as failed rather than continuing to wait.
+After Proton verification succeeds, keep the onboarding page open. It allows five minutes for the final reboot and production startup, then automatically replaces the temporary HTTPS onboarding page with the production interface at `http://192.168.50.1:8080/`. No link or click is required. If the automatic destination is still unavailable after ten minutes, treat setup as failed rather than continuing to wait.
 
 ## Waiting and retry behavior
 

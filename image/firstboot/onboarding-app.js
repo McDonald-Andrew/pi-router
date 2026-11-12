@@ -5,6 +5,8 @@
   const MAX_USERNAME_BYTES = 254;
   const MAX_PASSWORD_BYTES = 1024;
   const CONTENT_TYPE = "application/vnd.pi-router.credentials";
+  const PRODUCTION_URL = "http://192.168.50.1:8080/";
+  const PRODUCTION_REDIRECT_DELAY_MS = 300000;
 
   const csrfMeta = document.querySelector('meta[name="pi-router-csrf"]');
   const form = document.getElementById("onboarding-form");
@@ -12,11 +14,11 @@
   const passwordField = document.getElementById("proton-password");
   const submitButton = document.getElementById("submit-button");
   const result = document.getElementById("form-result");
-  const productionHandoff = document.getElementById("production-handoff");
   const statusSummary = document.getElementById("status-summary");
   const encoder = new TextEncoder();
   let onboardingSubmitted = false;
   let runningPostObserved = false;
+  let redirectScheduled = false;
 
   function updateCredentialMask(field) {
     const container = field.closest(".concealed-credential");
@@ -29,12 +31,18 @@
     updateCredentialMask(field);
   }
 
-  function showProductionHandoff() {
-    productionHandoff.hidden = false;
-  }
-
-  function hideProductionHandoff() {
-    productionHandoff.hidden = true;
+  function scheduleProductionRedirect() {
+    if (redirectScheduled) {
+      return;
+    }
+    redirectScheduled = true;
+    form.hidden = true;
+    submitButton.disabled = true;
+    result.textContent =
+      "Proton was verified. The router is restarting. This page will open the router interface automatically when startup has had time to finish.";
+    window.setTimeout(() => {
+      window.location.replace(PRODUCTION_URL);
+    }, PRODUCTION_REDIRECT_DELAY_MS);
   }
 
   function containsForbidden(value) {
@@ -88,19 +96,15 @@
         "Sign-in did not complete. Verify the credentials and try again.";
       onboardingSubmitted = false;
       runningPostObserved = false;
-      hideProductionHandoff();
       submitButton.disabled = false;
       form.hidden = false;
     }
-    if (onboardingSubmitted && documentValue.status === "rebooting-after-post") {
-      result.textContent =
-        "Proton was verified. The router is rebooting, so this page will disconnect.";
-      showProductionHandoff();
-      form.hidden = true;
+    if (documentValue.status === "rebooting-after-post") {
+      scheduleProductionRedirect();
     }
     statusSummary.textContent = documentValue.summary;
     if (documentValue.status === "ready") {
-      form.hidden = true;
+      window.location.replace(PRODUCTION_URL);
     }
   }
 
@@ -123,12 +127,12 @@
         presentStatus(documentValue);
       }
     } catch (_error) {
-      if (onboardingSubmitted) {
+      if (redirectScheduled) {
         statusSummary.textContent =
-          "The onboarding service disconnected. This is expected while the router reboots.";
-        result.textContent =
-          "Wait for the reboot to finish, then use the production address below.";
-        showProductionHandoff();
+          "The router is restarting. The local interface will open automatically.";
+      } else if (onboardingSubmitted) {
+        statusSummary.textContent =
+          "The onboarding connection was interrupted. This page will keep checking.";
       } else {
         statusSummary.textContent =
           "The router may be restarting. This page will keep checking.";
@@ -185,7 +189,6 @@
         runningPostObserved = false;
         result.textContent =
           "Sign-in started. If verification succeeds, the router will reboot automatically and this page will disconnect.";
-        showProductionHandoff();
       } else if (response.status === 429) {
         result.textContent = "Too many attempts. Wait before trying again.";
       } else if (response.status === 423) {

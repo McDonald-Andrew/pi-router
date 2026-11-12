@@ -538,12 +538,18 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("response.status === 401", javascript)
         self.assertIn("runningPostObserved", javascript)
         self.assertIn("Sign-in did not complete", javascript)
-        self.assertIn('id="production-handoff"', index)
-        self.assertIn("http://192.168.50.1:8080/", index)
-        self.assertIn('documentValue.status === "rebooting-after-post"', javascript)
+        self.assertNotIn('id="production-handoff"', index)
+        self.assertNotIn("http://192.168.50.1:8080/", index)
+        self.assertIn('if (documentValue.status === "rebooting-after-post")', javascript)
         self.assertIn("router will reboot automatically", javascript)
-        self.assertIn("onboarding service disconnected", javascript)
-        self.assertIn("productionHandoff.hidden", javascript)
+        self.assertIn(
+            'const PRODUCTION_URL = "http://192.168.50.1:8080/"', javascript
+        )
+        self.assertIn("PRODUCTION_REDIRECT_DELAY_MS = 300000", javascript)
+        self.assertIn("window.location.replace(PRODUCTION_URL)", javascript)
+        self.assertIn("function scheduleProductionRedirect()", javascript)
+        self.assertNotIn("showProductionHandoff", javascript)
+        self.assertNotIn("productionHandoff", javascript)
         self.assertIn("function updateCredentialMask(field)", javascript)
         self.assertIn('field.value.length > 0', javascript)
 

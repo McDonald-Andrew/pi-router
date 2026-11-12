@@ -156,6 +156,7 @@ class BackendFixture:
             expected_gid=None,
             boot_id_override=BOOT_B,
             release_override=RELEASE,
+            success_status_grace_seconds=0,
         )
 
 
@@ -289,6 +290,7 @@ class OnboardingBackendTests(unittest.TestCase):
         self.assertEqual(fixture.store.read_state(), "post-reboot-complete")
         self.assertIsNone(fixture.store.read_attempt())
         self.assertEqual(fixture.store.read_status().code, "rebooting-after-post")
+        self.assertEqual(backend.status_code(), "rebooting-after-post")
         self.assertEqual(observed["username"], bytearray(7))
         self.assertEqual(observed["password"], bytearray(6))
         self.assertIn(
