@@ -648,7 +648,3 @@ tbody tr:last-child td {
   justify-self: start;
   margin-top: 6px;
 }
-
-.onboarding-form-result:empty {
-  display: none;
-}

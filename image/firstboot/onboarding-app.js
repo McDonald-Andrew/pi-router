@@ -20,6 +20,18 @@
   let runningPostObserved = false;
   let redirectScheduled = false;
 
+  function showMessage(element, text, kind = "success") {
+    element.textContent = text;
+    element.className = `message ${kind}`;
+    element.hidden = false;
+  }
+
+  function hideMessage(element) {
+    element.textContent = "";
+    element.className = "message";
+    element.hidden = true;
+  }
+
   function updateCredentialMask(field) {
     const container = field.closest(".concealed-credential");
     container.classList.toggle("has-value", field.value.length > 0);
@@ -38,8 +50,6 @@
     redirectScheduled = true;
     form.hidden = true;
     submitButton.disabled = true;
-    result.textContent =
-      "Proton was verified. The router is restarting. This page will open the router interface automatically when startup has had time to finish.";
     window.setTimeout(() => {
       window.location.replace(PRODUCTION_URL);
     }, PRODUCTION_REDIRECT_DELAY_MS);
@@ -92,8 +102,11 @@
       runningPostObserved &&
       documentValue.status === "waiting-onboarding"
     ) {
-      result.textContent =
-        "Sign-in did not complete. Verify the credentials and try again.";
+      showMessage(
+        result,
+        "Sign-in did not complete. Verify the credentials and try again.",
+        "error"
+      );
       onboardingSubmitted = false;
       runningPostObserved = false;
       submitButton.disabled = false;
@@ -102,7 +115,13 @@
     if (documentValue.status === "rebooting-after-post") {
       scheduleProductionRedirect();
     }
-    statusSummary.textContent = documentValue.summary;
+    showMessage(
+      statusSummary,
+      documentValue.summary,
+      documentValue.status === "error" || documentValue.status === "unavailable"
+        ? "error"
+        : "success"
+    );
     if (documentValue.status === "ready") {
       window.location.replace(PRODUCTION_URL);
     }
@@ -118,7 +137,7 @@
         referrerPolicy: "no-referrer"
       });
       if (response.status === 401) {
-        statusSummary.textContent = "Creating a new local browser session.";
+        showMessage(statusSummary, "Creating a new local browser session.");
         window.location.reload();
         return;
       }
@@ -128,14 +147,21 @@
       }
     } catch (_error) {
       if (redirectScheduled) {
-        statusSummary.textContent =
-          "The router is restarting. The local interface will open automatically.";
+        showMessage(
+          statusSummary,
+          "The router is restarting. The local interface will open automatically."
+        );
       } else if (onboardingSubmitted) {
-        statusSummary.textContent =
-          "The onboarding connection was interrupted. This page will keep checking.";
+        showMessage(
+          statusSummary,
+          "The onboarding connection was interrupted. This page will keep checking.",
+          "error"
+        );
       } else {
-        statusSummary.textContent =
-          "The router may be restarting. This page will keep checking.";
+        showMessage(
+          statusSummary,
+          "The router may be restarting. This page will keep checking."
+        );
       }
     } finally {
       window.setTimeout(refreshStatus, 3000);
@@ -144,12 +170,12 @@
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
-    result.textContent = "";
+    hideMessage(result);
 
     let username = usernameField.value.trim();
     let password = passwordField.value;
     if (!username || !password || containsForbidden(username) || containsForbidden(password)) {
-      result.textContent = "Enter a valid Proton username and password.";
+      showMessage(result, "Enter a valid Proton username and password.", "error");
       return;
     }
 
@@ -157,7 +183,7 @@
     try {
       frame = buildCredentialFrame(username, password);
     } catch (_error) {
-      result.textContent = "The username or password is too long.";
+      showMessage(result, "The username or password is too long.", "error");
       return;
     } finally {
       usernameField.value = "";
@@ -169,7 +195,7 @@
     password = "";
 
     submitButton.disabled = true;
-    result.textContent = "Sending credentials to the router…";
+    showMessage(result, "Sending credentials to the router…");
     try {
       const response = await fetch("/api/onboard", {
         method: "POST",
@@ -187,19 +213,37 @@
       if (response.status === 202) {
         onboardingSubmitted = true;
         runningPostObserved = false;
-        result.textContent =
-          "Sign-in started. If verification succeeds, the router will reboot automatically and this page will disconnect.";
+        showMessage(
+          result,
+          "Sign-in started. If verification succeeds, the router will reboot automatically and this page will disconnect."
+        );
       } else if (response.status === 429) {
-        result.textContent = "Too many attempts. Wait before trying again.";
+        showMessage(
+          result,
+          "Too many attempts. Wait before trying again.",
+          "error"
+        );
       } else if (response.status === 423) {
-        result.textContent = "An onboarding attempt is already in progress.";
+        showMessage(
+          result,
+          "An onboarding attempt is already in progress.",
+          "error"
+        );
       } else if (responseBody.error === "not-ready") {
-        result.textContent = "The router is not ready for sign-in yet.";
+        showMessage(result, "The router is not ready for sign-in yet.", "error");
       } else {
-        result.textContent = "Sign-in could not start. Check the status and try again.";
+        showMessage(
+          result,
+          "Sign-in could not start. Check the status and try again.",
+          "error"
+        );
       }
     } catch (_error) {
-      result.textContent = "The router may be restarting. Check the status before retrying.";
+      showMessage(
+        result,
+        "The router may be restarting. Check the status before retrying.",
+        "error"
+      );
     } finally {
       if (frame !== null) {
         frame.fill(0);

@@ -521,6 +521,10 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn('href="/src/web/styles.css"', index)
         self.assertIn('src="/src/web/favicon.svg"', index)
         self.assertIn('class="brand-icon"', index)
+        self.assertIn('class="message success"', index)
+        self.assertGreaterEqual(index.count('role="status"'), 2)
+        self.assertIn('id="form-result"', index)
+        self.assertNotIn("onboarding-form-result", index)
         self.assertNotIn("onboarding-styles.css", index)
         self.assertIn('src="./onboarding-app.js"', index)
         self.assertNotIn("Router checks", index)
@@ -548,6 +552,10 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("PRODUCTION_REDIRECT_DELAY_MS = 300000", javascript)
         self.assertIn("window.location.replace(PRODUCTION_URL)", javascript)
         self.assertIn("function scheduleProductionRedirect()", javascript)
+        self.assertIn('element.className = `message ${kind}`', javascript)
+        self.assertIn('element.className = "message"', javascript)
+        self.assertIn("element.hidden = false", javascript)
+        self.assertIn("element.hidden = true", javascript)
         self.assertNotIn("showProductionHandoff", javascript)
         self.assertNotIn("productionHandoff", javascript)
         self.assertIn("function updateCredentialMask(field)", javascript)
@@ -559,6 +567,9 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn(".concealed-credential.has-value", stylesheet)
         self.assertIn("caret-color: transparent", stylesheet)
         self.assertIn("opacity: 0", stylesheet)
+        self.assertIn(".message.success", stylesheet)
+        self.assertIn(".message.error", stylesheet)
+        self.assertNotIn(".onboarding-form-result", stylesheet)
 
 
 class TLSDispatchTests(unittest.TestCase):
