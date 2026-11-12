@@ -442,7 +442,7 @@ src/
     ├── index.html
     ├── onboarding-app.js
     ├── onboarding-index.html
-    ├── onboarding_pseudo_terminal.py
+    ├── onboarding_server.py
     ├── server.py
     └── styles.css
 ```

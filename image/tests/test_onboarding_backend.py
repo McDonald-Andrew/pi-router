@@ -15,11 +15,9 @@ from typing import Callable, Sequence
 
 
 FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
-WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
 sys.path.insert(0, str(FIRSTBOOT_DIR))
-sys.path.insert(0, str(WEB_DIR))
 
-import onboarding_pseudo_terminal as pseudo_terminal  # noqa: E402
+import pi_router_onboarding_pseudo_terminal as pseudo_terminal  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
 import pi_router_onboarding_backend as backend_module  # noqa: E402
 

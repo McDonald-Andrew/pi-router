@@ -5,7 +5,7 @@ The browser frontend is deliberately unable to execute setup or mutate image
 state.  It sends one bounded credential packet over a root-owned UNIX
 ``SOCK_SEQPACKET`` socket.  This broker authenticates the frontend with
 ``SO_PEERCRED``, records durable intent, and delegates the interactive setup
-phase to :mod:`onboarding_pseudo_terminal`.
+phase to :mod:`pi_router_onboarding_pseudo_terminal`.
 
 No credential or raw pseudo-terminal output is logged, returned, or persisted.
 All responses and durable receipts are fixed enums.
@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, ContextManager, Final, Iterator, Mapping, Sequence
 
-from onboarding_pseudo_terminal import (
+from pi_router_onboarding_pseudo_terminal import (
     PseudoTerminalRunResult,
     PseudoTerminalStatus,
     run_post_reboot,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the image-owned HTTPS onboarding frontend."""
+"""Unit tests for the image-owned HTTPS onboarding server."""
 
 from __future__ import annotations
 
@@ -17,8 +17,9 @@ FIRSTBOOT = Path(__file__).resolve().parents[1] / "firstboot"
 REPOSITORY_ROOT = FIRSTBOOT.parents[1]
 WEB = REPOSITORY_ROOT / "src/web"
 os.sys.path.insert(0, str(FIRSTBOOT))
+os.sys.path.insert(0, str(WEB))
 
-import pi_router_onboarding_frontend as frontend  # noqa: E402
+import onboarding_server as frontend  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
 
 

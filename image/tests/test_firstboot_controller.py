@@ -10,11 +10,13 @@ from unittest import mock
 
 
 FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
+WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
 sys.path.insert(0, str(FIRSTBOOT_DIR))
+sys.path.insert(0, str(WEB_DIR))
 
 import pi_router_image_controller as controller_module  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
-import pi_router_onboarding_frontend as onboarding_frontend  # noqa: E402
+import onboarding_server  # noqa: E402
 
 
 BOOT_A = "01234567-89ab-4def-8123-456789abcdef"
@@ -1385,11 +1387,11 @@ class UnitContractTests(unittest.TestCase):
     def test_state_and_frontend_status_schemas_match(self) -> None:
         self.assertEqual(
             image_state.STATUS_CODES,
-            onboarding_frontend.STATUS_CODES,
+            onboarding_server.STATUS_CODES,
         )
         self.assertEqual(
             image_state.STATUS_CODES,
-            frozenset(onboarding_frontend._STATUS_SUMMARIES),
+            frozenset(onboarding_server._STATUS_SUMMARIES),
         )
 
     def test_all_controller_terminal_codes_exist_in_state_schema(self) -> None:

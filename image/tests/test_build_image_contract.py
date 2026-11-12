@@ -142,7 +142,8 @@ class BuildImageContractTests(unittest.TestCase):
             "pi-router-ssh-retry.conf",
             "pi-router-onboarding.sysusers",
             "pi_router_image_controller.py",
-            "onboarding_pseudo_terminal.py",
+            "pi_router_onboarding_pseudo_terminal.py",
+            "onboarding_server.py",
             "onboarding-index.html",
             "onboarding-app.js",
         ):
@@ -150,10 +151,13 @@ class BuildImageContractTests(unittest.TestCase):
                 self.assertIn(artifact, source)
         self.assertIn('"$release_path/web/onboarding-index.html"', source)
         self.assertIn('"$release_path/web/onboarding-app.js"', source)
-        self.assertIn('"$release_path/web/onboarding_pseudo_terminal.py"', source)
+        self.assertIn('"$release_path/web/onboarding_server.py"', source)
         self.assertNotIn('"$firstboot_source/onboarding-index.html"', source)
         self.assertNotIn('"$firstboot_source/onboarding-app.js"', source)
-        self.assertNotIn('"$firstboot_source/onboarding_pseudo_terminal.py"', source)
+        self.assertNotIn(
+            '"$release_path/web/pi_router_onboarding_pseudo_terminal.py"', source
+        )
+        self.assertNotIn('"$firstboot_source/onboarding_server.py"', source)
         self.assertIn(
             'systemd-sysusers --root="$root" pi-router-onboarding.conf', source
         )

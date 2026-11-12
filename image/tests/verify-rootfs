@@ -363,7 +363,7 @@ for module in \
     pi_router_image_state.py \
     pi_router_image_controller.py \
     pi_router_onboarding_backend.py \
-    pi_router_onboarding_frontend.py
+    pi_router_onboarding_pseudo_terminal.py
 do
     assert_copy \
         "$asset_dir/$module" \
@@ -372,10 +372,10 @@ do
         "firstboot Python module"
 done
 assert_copy \
-    "$release_path/web/onboarding_pseudo_terminal.py" \
-    "$root/usr/local/lib/pi-router-image/onboarding_pseudo_terminal.py" \
+    "$release_path/web/onboarding_server.py" \
+    "$root/usr/local/lib/pi-router-image/onboarding_server.py" \
     "0:0:644" \
-    "Proton onboarding pseudo-terminal module"
+    "Proton onboarding HTTPS server module"
 
 for executable in pi-router-firstboot pi-router-onboarding pi-router-onboarding-backend; do
     assert_copy \

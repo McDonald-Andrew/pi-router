@@ -14,10 +14,10 @@ import time
 import unittest
 
 
-WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
-sys.path.insert(0, str(WEB_DIR))
+FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
+sys.path.insert(0, str(FIRSTBOOT_DIR))
 
-from onboarding_pseudo_terminal import (  # noqa: E402
+from pi_router_onboarding_pseudo_terminal import (  # noqa: E402
     SETUP_ARGV,
     SETUP_ENV,
     PseudoTerminalStatus,

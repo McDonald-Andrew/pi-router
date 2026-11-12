@@ -135,15 +135,15 @@ for module in \
     pi_router_image_state.py \
     pi_router_image_controller.py \
     pi_router_onboarding_backend.py \
-    pi_router_onboarding_frontend.py
+    pi_router_onboarding_pseudo_terminal.py
 do
     install -D -o root -g root -m 0644 \
         "$firstboot_source/$module" \
         "$root/usr/local/lib/pi-router-image/$module"
 done
 install -D -o root -g root -m 0644 \
-    "$release_path/web/onboarding_pseudo_terminal.py" \
-    "$root/usr/local/lib/pi-router-image/onboarding_pseudo_terminal.py"
+    "$release_path/web/onboarding_server.py" \
+    "$root/usr/local/lib/pi-router-image/onboarding_server.py"
 
 for executable in \
     pi-router-firstboot \
