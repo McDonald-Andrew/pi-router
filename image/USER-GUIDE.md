@@ -144,11 +144,11 @@ commands below are available only if the certified graphical autologin/session
 provides a usable terminal, or when using a controlled development/debug image:
 
 ```bash
-sudo systemctl status pi-router-firstboot.service
-sudo systemctl status pi-router-firstboot.timer
+sudo systemctl status pi-router-image-controller.service
+sudo systemctl status pi-router-image-controller.timer
 sudo systemctl status pi-router-onboarding-backend.service
-sudo systemctl status pi-router-onboarding.service
-sudo journalctl -u pi-router-firstboot.service -b --no-pager
+sudo systemctl status pi-router-onboarding-server.service
+sudo journalctl -u pi-router-image-controller.service -b --no-pager
 sudo journalctl -u pi-router-onboarding-backend.service -b --no-pager
 sudo cat /var/lib/pi-router-image/state
 sudo cat /var/lib/pi-router-image/status

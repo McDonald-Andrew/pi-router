@@ -505,7 +505,10 @@ class HTTPFrontendTests(unittest.TestCase):
 
 class ServiceDefinitionTests(unittest.TestCase):
     def test_service_is_static_hardened_and_uses_systemd_credentials(self) -> None:
-        service = (FIRSTBOOT / "pi-router-onboarding.service").read_text(
+        service = (FIRSTBOOT / "pi-router-onboarding-server.service").read_text(
+            encoding="utf-8"
+        )
+        executable = (FIRSTBOOT / "pi-router-onboarding-server").read_text(
             encoding="utf-8"
         )
         self.assertEqual(frontend.DEFAULT_PORT, 8080)
@@ -514,6 +517,8 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn("Requires=pi-router-onboarding-backend.service", service)
         self.assertIn("BindsTo=pi-router-onboarding-backend.service", service)
         self.assertIn("After=network.target pi-router-onboarding-backend.service", service)
+        self.assertIn("ExecStart=/usr/local/libexec/pi-router-onboarding-server", service)
+        self.assertIn("onboarding_server.py", executable)
         self.assertIn("LoadCredential=tls.crt:", service)
         self.assertIn("LoadCredential=tls.key:", service)
         self.assertIn("RestrictAddressFamilies=AF_INET AF_UNIX", service)

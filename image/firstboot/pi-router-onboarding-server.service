@@ -1,5 +1,5 @@
 [Unit]
-Description=Pi Router temporary Proton onboarding frontend
+Description=Pi Router temporary Proton onboarding server
 Requires=pi-router-onboarding-backend.service
 BindsTo=pi-router-onboarding-backend.service
 PartOf=pi-router-onboarding-backend.service
@@ -14,7 +14,7 @@ Type=simple
 User=pi-router-onboarding
 Group=pi-router-onboarding
 UMask=0077
-ExecStart=/usr/local/libexec/pi-router-onboarding --config /etc/pi-router.conf --assets /usr/local/share/pi-router-onboarding --socket /run/pi-router-image/onboarding.sock --version-file /usr/local/share/pi-router-web/version.txt --port 8080
+ExecStart=/usr/local/libexec/pi-router-onboarding-server --config /etc/pi-router.conf --assets /usr/local/share/pi-router-onboarding --socket /run/pi-router-image/onboarding.sock --version-file /usr/local/share/pi-router-web/version.txt --port 8080
 LoadCredential=tls.crt:/run/pi-router-image/onboarding.crt
 LoadCredential=tls.key:/run/pi-router-image/onboarding.key
 Restart=no

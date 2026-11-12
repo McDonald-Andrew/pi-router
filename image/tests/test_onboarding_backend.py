@@ -655,11 +655,12 @@ class TLSContractTests(unittest.TestCase):
         unit = (
             FIRSTBOOT_DIR / "pi-router-onboarding-backend.service"
         ).read_text(encoding="utf-8")
-        frontend = (FIRSTBOOT_DIR / "pi-router-onboarding.service").read_text(
+        frontend = (FIRSTBOOT_DIR / "pi-router-onboarding-server.service").read_text(
             encoding="utf-8"
         )
         self.assertIn("Type=notify", unit)
         self.assertIn("NotifyAccess=main", unit)
+        self.assertIn("Before=pi-router-onboarding-server.service", unit)
         self.assertIn("LimitCORE=0", unit)
         self.assertIn("MemorySwapMax=0", unit)
         self.assertIn("Requires=pi-router-onboarding-backend.service", frontend)

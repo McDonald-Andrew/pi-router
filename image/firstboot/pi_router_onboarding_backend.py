@@ -55,7 +55,7 @@ except ImportError:  # pragma: no cover - Windows only.
 
 SOCKET_PATH: Final = Path("/run/pi-router-image/onboarding.sock")
 RUNTIME_DIRECTORY: Final = SOCKET_PATH.parent
-FIRSTBOOT_LOCK: Final = Path("/run/lock/pi-router-firstboot.lock")
+FIRSTBOOT_LOCK: Final = Path("/run/lock/pi-router-image-controller.lock")
 STATE_DIRECTORY: Final = Path("/var/lib/pi-router-image")
 CHECKPOINT_PATH: Final = Path(
     "/var/lib/pi-router-setup/reboot-required.boot-id"

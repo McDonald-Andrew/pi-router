@@ -6,7 +6,7 @@ OnBootSec=10s
 OnUnitInactiveSec=15s
 AccuracySec=1s
 RandomizedDelaySec=0
-Unit=pi-router-firstboot.service
+Unit=pi-router-image-controller.service
 
 [Install]
 WantedBy=timers.target

@@ -349,11 +349,11 @@ for unit in "${audited_units[@]}"; do
     esac
 done
 
-[[ "$(unit_state pi-router-firstboot.timer)" == enabled ]] ||
+[[ "$(unit_state pi-router-image-controller.timer)" == enabled ]] ||
     fail "firstboot timer is not enabled"
 for unit in \
-    pi-router-firstboot.service \
-    pi-router-onboarding.service \
+    pi-router-image-controller.service \
+    pi-router-onboarding-server.service \
     pi-router-onboarding-backend.service
 do
     [[ "$(unit_state "$unit")" == static ]] || fail "$unit must remain static"
@@ -377,7 +377,7 @@ assert_copy \
     "0:0:644" \
     "Proton onboarding HTTPS server module"
 
-for executable in pi-router-firstboot pi-router-onboarding pi-router-onboarding-backend; do
+for executable in pi-router-image-controller pi-router-onboarding-server pi-router-onboarding-backend; do
     assert_copy \
         "$asset_dir/$executable" \
         "$root/usr/local/libexec/$executable" \
@@ -386,9 +386,9 @@ for executable in pi-router-firstboot pi-router-onboarding pi-router-onboarding-
 done
 
 for unit in \
-    pi-router-firstboot.service \
-    pi-router-firstboot.timer \
-    pi-router-onboarding.service \
+    pi-router-image-controller.service \
+    pi-router-image-controller.timer \
+    pi-router-onboarding-server.service \
     pi-router-onboarding-backend.service
 do
     assert_copy \

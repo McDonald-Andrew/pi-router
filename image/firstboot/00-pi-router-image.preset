@@ -1,6 +1,6 @@
 # Initial image safety policy. The canonical setup phase enables the router
 # services only after hardware detection, cutover, and fail-closed generation.
-enable pi-router-firstboot.timer
+enable pi-router-image-controller.timer
 disable dnsmasq.service
 disable nftables.service
 disable ssh.service

@@ -597,7 +597,7 @@ class FirstbootControllerTests(unittest.TestCase):
             (
                 "/usr/bin/systemctl",
                 "stop",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
                 "pi-router-onboarding-backend.service",
             ),
             runner.commands,
@@ -607,7 +607,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             runner.commands,
         )
@@ -754,7 +754,7 @@ class FirstbootControllerTests(unittest.TestCase):
         self.assertEqual(outcome, "waiting-onboarding")
         self.assertEqual(store.read_state(), "pre-reboot-complete")
         self.assertIn(
-            ("/usr/bin/systemctl", "start", "pi-router-onboarding.service"),
+            ("/usr/bin/systemctl", "start", "pi-router-onboarding-server.service"),
             runner.commands,
         )
         self.assertFalse(any("--phase" in command for command in runner.commands))
@@ -847,7 +847,7 @@ class FirstbootControllerTests(unittest.TestCase):
             if command == (
                 "/usr/bin/systemctl",
                 "is-active",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
             ):
                 return result(0, "active\n")
             return default_result(command)
@@ -864,7 +864,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             runner.commands,
         )
@@ -884,7 +884,7 @@ class FirstbootControllerTests(unittest.TestCase):
             if command == (
                 "/usr/bin/systemctl",
                 "is-active",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
             ):
                 return result(0, "active\n")
             return default_result(command)
@@ -900,7 +900,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             first_runner.commands,
         )
@@ -913,7 +913,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             retry_runner.commands,
         )
@@ -987,7 +987,7 @@ class FirstbootControllerTests(unittest.TestCase):
             if command == (
                 "/usr/bin/systemctl",
                 "start",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
             ):
                 return result(1)
             return default_result(command)
@@ -1047,7 +1047,7 @@ class FirstbootControllerTests(unittest.TestCase):
             if command == (
                 "/usr/bin/systemctl",
                 "is-active",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
             ):
                 return result(0, "active\n")
             return default_result(command)
@@ -1064,7 +1064,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             first_runner.commands,
         )
@@ -1076,7 +1076,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             retry_runner.commands,
         )
@@ -1103,7 +1103,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 "/usr/bin/systemctl",
                 "disable",
                 "--now",
-                "pi-router-firstboot.timer",
+                "pi-router-image-controller.timer",
             ),
             runner.commands,
         )
@@ -1415,10 +1415,13 @@ class UnitContractTests(unittest.TestCase):
         self.assertEqual(codes - image_state.ERROR_CODES, set())
 
     def test_timer_retries_oneshot_without_network_online_dependency(self) -> None:
-        service = (FIRSTBOOT_DIR / "pi-router-firstboot.service").read_text(
+        service = (FIRSTBOOT_DIR / "pi-router-image-controller.service").read_text(
             encoding="utf-8"
         )
-        timer = (FIRSTBOOT_DIR / "pi-router-firstboot.timer").read_text(
+        timer = (FIRSTBOOT_DIR / "pi-router-image-controller.timer").read_text(
+            encoding="utf-8"
+        )
+        executable = (FIRSTBOOT_DIR / "pi-router-image-controller").read_text(
             encoding="utf-8"
         )
         self.assertIn("Type=oneshot", service)
@@ -1429,9 +1432,11 @@ class UnitContractTests(unittest.TestCase):
             "After=local-fs.target cloud-init.target systemd-machine-id-commit.service systemd-sysusers.service systemd-tmpfiles-setup.service NetworkManager.service",
             service,
         )
-        self.assertIn("ExecStart=/usr/local/libexec/pi-router-firstboot", service)
+        self.assertIn("ExecStart=/usr/local/libexec/pi-router-image-controller", service)
+        self.assertIn("pi_router_image_controller.py", executable)
         self.assertIn("TimeoutStartSec=40min", service)
         self.assertIn("OnUnitInactiveSec=15s", timer)
+        self.assertIn("Unit=pi-router-image-controller.service", timer)
         self.assertIn("WantedBy=timers.target", timer)
 
 

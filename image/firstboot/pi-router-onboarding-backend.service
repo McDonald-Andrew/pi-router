@@ -1,7 +1,7 @@
 [Unit]
 Description=Pi Router privileged one-time onboarding broker
 After=local-fs.target NetworkManager.service
-Before=pi-router-onboarding.service
+Before=pi-router-onboarding-server.service
 
 [Service]
 Type=notify

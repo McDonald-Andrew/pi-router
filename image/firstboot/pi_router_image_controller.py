@@ -233,7 +233,7 @@ class ControllerPaths:
 
     @property
     def lock(self) -> Path:
-        return self.path("/run/lock/pi-router-firstboot.lock")
+        return self.path("/run/lock/pi-router-image-controller.lock")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -505,7 +505,7 @@ class FirstbootController:
             (
                 self.SYSTEMCTL,
                 "stop",
-                "pi-router-onboarding.service",
+                "pi-router-onboarding-server.service",
                 "pi-router-onboarding-backend.service",
             )
         )
@@ -518,7 +518,7 @@ class FirstbootController:
         # unit.  Unknown or empty results retain the firstboot timer so the
         # cleanup is retried.
         for unit in (
-            "pi-router-onboarding.service",
+            "pi-router-onboarding-server.service",
             "pi-router-onboarding-backend.service",
         ):
             state = self._best_effort((self.SYSTEMCTL, "is-active", unit))
@@ -528,7 +528,12 @@ class FirstbootController:
 
     def _disable_timer(self) -> None:
         self._best_effort(
-            (self.SYSTEMCTL, "disable", "--now", "pi-router-firstboot.timer")
+            (
+                self.SYSTEMCTL,
+                "disable",
+                "--now",
+                "pi-router-image-controller.timer",
+            )
         )
 
     def _request_reboot(self, status: str) -> str:
@@ -1039,7 +1044,7 @@ class FirstbootController:
                 # point. It remains authoritative when status/output is lost.
                 if not self._pre_output_valid(result):
                     print(
-                        "pi-router-firstboot: pre-reboot output was incomplete; "
+                        "pi-router-image-controller: pre-reboot output was incomplete; "
                         "reconciled from setup checkpoint",
                         file=sys.stderr,
                     )
@@ -1088,7 +1093,7 @@ class FirstbootController:
                     )
                 if not self._pre_output_valid(result):
                     print(
-                        "pi-router-firstboot: pre-resume output was incomplete; "
+                        "pi-router-image-controller: pre-resume output was incomplete; "
                         "reconciled from setup checkpoint",
                         file=sys.stderr,
                     )
@@ -1239,7 +1244,7 @@ class FirstbootController:
         return self._start_onboarding()
 
     def _start_onboarding(self) -> str:
-        result = self._run((self.SYSTEMCTL, "start", "pi-router-onboarding.service"))
+        result = self._run((self.SYSTEMCTL, "start", "pi-router-onboarding-server.service"))
         status = "waiting-onboarding" if result.returncode == 0 else "waiting-desktop"
         self._write_status(status)
         return status
@@ -1584,18 +1589,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if argv:
-        print("pi-router-firstboot: no command-line options are supported", file=sys.stderr)
+        print(
+            "pi-router-image-controller: no command-line options are supported",
+            file=sys.stderr,
+        )
         return 2
     controller = FirstbootController()
     try:
         outcome = controller.run_locked()
     except ImageStateError as exc:
-        print(f"pi-router-firstboot: unsafe image state: {exc}", file=sys.stderr)
+        print(
+            f"pi-router-image-controller: unsafe image state: {exc}",
+            file=sys.stderr,
+        )
         return 1
     except Exception as exc:  # Preserve diagnostics for unexpected code faults.
-        print(f"pi-router-firstboot: internal failure: {exc}", file=sys.stderr)
+        print(
+            f"pi-router-image-controller: internal failure: {exc}",
+            file=sys.stderr,
+        )
         return 1
-    print(f"pi-router-firstboot: {outcome}")
+    print(f"pi-router-image-controller: {outcome}")
     return 1 if outcome == "terminal" else 0
 
 

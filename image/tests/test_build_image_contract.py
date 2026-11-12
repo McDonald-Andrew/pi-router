@@ -41,7 +41,7 @@ class BuildImageContractTests(unittest.TestCase):
         source = self.read("customize-rootfs")
 
         profile_case_end = source.index("esac")
-        first_stack_install = source.index("pi-router-firstboot.service")
+        first_stack_install = source.index("pi-router-image-controller.service")
         self.assertLess(profile_case_end, first_stack_install)
         self.assertNotIn(
             '[[ "$PI_ROUTER_IMAGE_PROFILE" ==', source[first_stack_install:]
@@ -133,10 +133,13 @@ class BuildImageContractTests(unittest.TestCase):
         source = self.read("customize-rootfs")
 
         for artifact in (
-            "pi-router-firstboot.timer",
-            "pi-router-firstboot.service",
-            "pi-router-onboarding.service",
+            "pi-router-image-controller.timer",
+            "pi-router-image-controller.service",
+            "pi-router-image-controller",
+            "pi-router-onboarding-server.service",
+            "pi-router-onboarding-server",
             "pi-router-onboarding-backend.service",
+            "pi-router-onboarding-backend",
             "pi-router-policy-rc.d",
             "pi-router-sshd.conf",
             "pi-router-ssh-retry.conf",
@@ -169,7 +172,7 @@ class BuildImageContractTests(unittest.TestCase):
             '\\( -lname "$unit" -o -lname "*/$unit" \\) -delete', source
         )
         self.assertIn("systemctl --root=", source)
-        self.assertIn("enable pi-router-firstboot.timer", source)
+        self.assertIn("enable pi-router-image-controller.timer", source)
 
     def test_onboarding_reuses_the_production_stylesheet(self) -> None:
         customizer = self.read("customize-rootfs")
@@ -226,7 +229,7 @@ class BuildImageContractTests(unittest.TestCase):
         self.assertNotIn("mask userconfig.service", source)
         self.assertIn("base_os=raspberry-pi-os", source)
 
-        unit = self.read("firstboot/pi-router-firstboot.service")
+        unit = self.read("firstboot/pi-router-image-controller.service")
         self.assertIn("Wants=cloud-init.target", unit)
         self.assertIn("After=local-fs.target cloud-init.target", unit)
 

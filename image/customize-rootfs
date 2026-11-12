@@ -146,8 +146,8 @@ install -D -o root -g root -m 0644 \
     "$root/usr/local/lib/pi-router-image/onboarding_server.py"
 
 for executable in \
-    pi-router-firstboot \
-    pi-router-onboarding \
+    pi-router-image-controller \
+    pi-router-onboarding-server \
     pi-router-onboarding-backend
 do
     install -D -o root -g root -m 0755 \
@@ -156,9 +156,9 @@ do
 done
 
 for unit in \
-    pi-router-firstboot.service \
-    pi-router-firstboot.timer \
-    pi-router-onboarding.service \
+    pi-router-image-controller.service \
+    pi-router-image-controller.timer \
+    pi-router-onboarding-server.service \
     pi-router-onboarding-backend.service
 do
     install -D -o root -g root -m 0644 \
@@ -223,7 +223,7 @@ done
 for unit in cups.service cups.socket cups.path; do
     ln -sfnT /dev/null "$root/etc/systemd/system/$unit"
 done
-systemctl --root="$root" enable pi-router-firstboot.timer >/dev/null
+systemctl --root="$root" enable pi-router-image-controller.timer >/dev/null
 
 manifest_dir="$root/usr/share/pi-router/image-build"
 install -d -o root -g root -m 0755 "$manifest_dir"
