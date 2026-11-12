@@ -5,10 +5,10 @@ The browser frontend is deliberately unable to execute setup or mutate image
 state.  It sends one bounded credential packet over a root-owned UNIX
 ``SOCK_SEQPACKET`` socket.  This broker authenticates the frontend with
 ``SO_PEERCRED``, records durable intent, and delegates the interactive setup
-phase to :mod:`pi_router_image_pty`.
+phase to :mod:`onboarding_pseudo_terminal`.
 
-No credential or raw PTY output is logged, returned, or persisted.  All
-responses and durable receipts are fixed enums.
+No credential or raw pseudo-terminal output is logged, returned, or persisted.
+All responses and durable receipts are fixed enums.
 """
 
 from __future__ import annotations
@@ -30,7 +30,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, ContextManager, Final, Iterator, Mapping, Sequence
 
-from pi_router_image_pty import PtyRunResult, PtyStatus, run_post_reboot
+from onboarding_pseudo_terminal import (
+    PseudoTerminalRunResult,
+    PseudoTerminalStatus,
+    run_post_reboot,
+)
 from pi_router_image_state import (
     Attempt,
     ERROR_CODES,
@@ -352,7 +356,9 @@ class OnboardingBackend:
         paths: BackendPaths | None = None,
         store: ImageStateStore | None = None,
         runner: CommandRunner | None = None,
-        pty_runner: Callable[[bytearray, bytearray], PtyRunResult] = run_post_reboot,
+        pseudo_terminal_runner: Callable[
+            [bytearray, bytearray], PseudoTerminalRunResult
+        ] = run_post_reboot,
         worker_launcher: Callable[[Callable[[], None]], None] | None = None,
         lock_factory: Callable[[], ContextManager[None]] | None = None,
         expected_uid: int | None = 0,
@@ -370,7 +376,7 @@ class OnboardingBackend:
             expected_gid=expected_gid,
         )
         self.runner = runner or CommandRunner()
-        self.pty_runner = pty_runner
+        self.pseudo_terminal_runner = pseudo_terminal_runner
         self.expected_uid = expected_uid
         self.expected_gid = expected_gid
         self.boot_id_override = boot_id_override
@@ -678,7 +684,7 @@ class OnboardingBackend:
     def _run_worker(self, username: bytearray, password: bytearray) -> None:
         attempted = False
         prior: Preconditions | None = None
-        result: PtyRunResult | None = None
+        result: PseudoTerminalRunResult | None = None
         fault: BackendFault | None = None
         try:
             with self._lock_factory():
@@ -700,7 +706,7 @@ class OnboardingBackend:
                     "pre-reboot-complete", "running-post-reboot"
                 )
                 try:
-                    result = self.pty_runner(username, password)
+                    result = self.pseudo_terminal_runner(username, password)
                 except Exception:
                     result = None
                 finally:
@@ -718,7 +724,10 @@ class OnboardingBackend:
                         fault = BackendFault("checkpoint-conflict")
                     elif not self._bootstrap_closed():
                         fault = BackendFault("setup-post-failed")
-                    elif result is not None and result.status is PtyStatus.SUCCESS:
+                    elif (
+                        result is not None
+                        and result.status is PseudoTerminalStatus.SUCCESS
+                    ):
                         fault = BackendFault("setup-post-failed")
                     else:
                         self._retry()

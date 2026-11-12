@@ -15,9 +15,11 @@ from typing import Callable, Sequence
 
 
 FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
+WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
 sys.path.insert(0, str(FIRSTBOOT_DIR))
+sys.path.insert(0, str(WEB_DIR))
 
-import pi_router_image_pty as image_pty  # noqa: E402
+import onboarding_pseudo_terminal as pseudo_terminal  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
 import pi_router_onboarding_backend as backend_module  # noqa: E402
 
@@ -37,7 +39,9 @@ def credential_frame(username: bytes = b"account", password: bytes = b"secret") 
     )
 
 
-def pty_result(status: image_pty.PtyStatus) -> types.SimpleNamespace:
+def pseudo_terminal_result(
+    status: pseudo_terminal.PseudoTerminalStatus,
+) -> types.SimpleNamespace:
     return types.SimpleNamespace(status=status)
 
 
@@ -140,7 +144,7 @@ class BackendFixture:
 
     def backend(
         self,
-        pty_runner: Callable[[bytearray, bytearray], object],
+        pseudo_terminal_runner: Callable[[bytearray, bytearray], object],
         *,
         runner: FakeRunner | None = None,
         launcher: Callable[[Callable[[], None]], None] | None = None,
@@ -149,7 +153,7 @@ class BackendFixture:
             paths=self.paths,
             store=self.store,
             runner=runner or FakeRunner(),
-            pty_runner=pty_runner,  # type: ignore[arg-type]
+            pseudo_terminal_runner=pseudo_terminal_runner,  # type: ignore[arg-type]
             worker_launcher=launcher or (lambda target: target()),
             lock_factory=contextlib.nullcontext,
             expected_uid=None,
@@ -165,8 +169,8 @@ class OnboardingBackendTests(unittest.TestCase):
         fixture = BackendFixture(self)
         runner = FakeRunner()
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             ),
             runner=runner,
         )
@@ -191,7 +195,9 @@ class OnboardingBackendTests(unittest.TestCase):
         backend = fixture.backend(
             lambda _username, _password: (
                 calls.append(True),
-                pty_result(image_pty.PtyStatus.COMMAND_FAILED),
+                pseudo_terminal_result(
+                    pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
+                ),
             )[1],
             runner=runner,
         )
@@ -227,8 +233,8 @@ class OnboardingBackendTests(unittest.TestCase):
         fixture = BackendFixture(self)
         runner = FakeRunner()
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             ),
             runner=runner,
         )
@@ -253,8 +259,8 @@ class OnboardingBackendTests(unittest.TestCase):
     def test_active_worker_status_wins_over_disappearing_prerequisites(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             )
         )
         fixture.set_carrier("lan0", False)
@@ -262,7 +268,7 @@ class OnboardingBackendTests(unittest.TestCase):
             backend._worker_active = True
         self.assertEqual(backend.status_code(), "running-post-reboot")
 
-    def test_attempt_is_durable_before_pty_and_success_commits(self) -> None:
+    def test_attempt_is_durable_before_pseudo_terminal_and_commits(self) -> None:
         fixture = BackendFixture(self)
         fixture.provisioning()
         observed: dict[str, object] = {}
@@ -279,7 +285,9 @@ class OnboardingBackendTests(unittest.TestCase):
             observed["password"] = password
             fixture.write_checkpoint(BOOT_B)
             fixture.paths.provisioning.unlink()
-            return pty_result(image_pty.PtyStatus.SUCCESS)
+            return pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
 
         runner = FakeRunner()
         backend = fixture.backend(run, runner=runner)
@@ -298,12 +306,14 @@ class OnboardingBackendTests(unittest.TestCase):
             runner.commands,
         )
 
-    def test_checkpoint_commit_reconciles_even_when_pty_result_is_failure(self) -> None:
+    def test_checkpoint_commit_reconciles_pseudo_terminal_failure(self) -> None:
         fixture = BackendFixture(self)
 
         def run(_username: bytearray, _password: bytearray) -> object:
             fixture.write_checkpoint(BOOT_B)
-            return pty_result(image_pty.PtyStatus.COMMAND_FAILED)
+            return pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
+            )
 
         backend = fixture.backend(run)
         self.assertEqual(
@@ -317,8 +327,8 @@ class OnboardingBackendTests(unittest.TestCase):
         fixture = BackendFixture(self)
 
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             )
         )
         self.assertEqual(
@@ -340,8 +350,8 @@ class OnboardingBackendTests(unittest.TestCase):
             else backend_module.CommandResult(0, "")
         )
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             ),
             runner=runner,
         )
@@ -357,7 +367,9 @@ class OnboardingBackendTests(unittest.TestCase):
         fixture.write_checkpoint("not-a-uuid")
         frame = credential_frame()
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
         )
 
         self.assertEqual(backend.submit_frame(frame), backend_module.RESPONSE_FAILED)
@@ -371,7 +383,9 @@ class OnboardingBackendTests(unittest.TestCase):
     def test_not_ready_busy_and_invalid_are_fixed_responses(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
         )
         invalid = bytearray(b"bad")
         self.assertEqual(backend.submit_frame(invalid), backend_module.RESPONSE_INVALID)
@@ -411,7 +425,9 @@ class OnboardingBackendTests(unittest.TestCase):
             raise RuntimeError
 
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS),
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            ),
             launcher=launcher,
         )
         self.assertEqual(
@@ -464,7 +480,9 @@ class BrokerProtocolTests(unittest.TestCase):
     def test_peer_identity_must_match_exact_uid_and_gid(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
         )
         server = backend_module.BrokerServer(
             backend,
@@ -488,7 +506,9 @@ class BrokerProtocolTests(unittest.TestCase):
     def test_status_protocol_is_one_fixed_seqpacket(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
         )
         server = backend_module.BrokerServer(
             backend,
@@ -508,7 +528,9 @@ class BrokerProtocolTests(unittest.TestCase):
     def test_serve_preserves_listener_opened_before_systemd_ready(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.SUCCESS)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.SUCCESS
+            )
         )
         backend.stop_event.set()
         server = backend_module.BrokerServer(
@@ -531,7 +553,9 @@ class BrokerProtocolTests(unittest.TestCase):
         fixture = BackendFixture(self)
         fixture.paths.runtime_directory.parent.mkdir(parents=True, exist_ok=True)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(image_pty.PtyStatus.COMMAND_FAILED)
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
+            )
         )
         server = backend_module.BrokerServer(
             backend,
@@ -559,8 +583,8 @@ class BrokerProtocolTests(unittest.TestCase):
     def test_credential_packet_is_received_mutably_and_wiped(self) -> None:
         fixture = BackendFixture(self)
         backend = fixture.backend(
-            lambda _username, _password: pty_result(
-                image_pty.PtyStatus.COMMAND_FAILED
+            lambda _username, _password: pseudo_terminal_result(
+                pseudo_terminal.PseudoTerminalStatus.COMMAND_FAILED
             )
         )
         server = backend_module.BrokerServer(

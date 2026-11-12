@@ -198,7 +198,7 @@ setup's installation logic or pre-generated machine-specific configuration.
 - [x] Show sanitized hardware, cable, WAN, setup, and error status.
 - [x] Protect requests with origin/CSRF checks, bounded inputs, peer credential
   checks, and rate limiting.
-- [x] Feed username/password only in response to the expected interactive PTY
+- [x] Feed username/password only in response to the expected interactive pseudo-terminal
   prompts; exclude them from image-owned logs, status, and command arguments.
 - [x] Require Proton and post-reboot success markers plus the new setup
   checkpoint before requesting the final reboot.
@@ -221,8 +221,7 @@ setup's installation logic or pre-generated machine-specific configuration.
 ### P9 - Automated verification
 
 - [x] Unit-test state transitions, command failure, timeout, interruption,
-  reboot reconciliation, PTY prompt splitting, redaction, request security,
-  and fail-closed behavior.
+  reboot reconciliation, pseudo-terminal prompt splitting, redaction, request security, and fail-closed behavior.
 - [x] Statically inspect the target dpkg database and systemd enablement
   without chroot or target execution.
 - [x] Make the builder mount and audit the customized root before compression

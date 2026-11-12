@@ -1,12 +1,12 @@
 #!/usr/bin/python3
-"""Credential-safe PTY runner for the image-owned Proton onboarding step.
+"""Credential-safe pseudo-terminal runner for Proton onboarding.
 
 The production command and environment in this module are intentionally fixed.
 Tests may inject another absolute command and working directory, but callers in
 the appliance should use :func:`run_post_reboot` without those overrides.
 
-Raw PTY output is never returned or logged.  Only prompt/marker booleans and an
-enumerated terminal status leave this module.
+Raw pseudo-terminal output is never returned or logged. Only prompt/marker
+booleans and an enumerated pseudo-terminal status leave this module.
 """
 
 from __future__ import annotations
@@ -51,14 +51,14 @@ SETUP_ENV: Mapping[str, str] = {
 }
 
 
-class PtyStatus(str, Enum):
-    """Sanitized terminal status for one post-reboot invocation."""
+class PseudoTerminalStatus(str, Enum):
+    """Sanitized pseudo-terminal status for one post-reboot invocation."""
 
     SUCCESS = "success"
     INVALID_CREDENTIAL = "invalid-credential"
     UNSUPPORTED_PLATFORM = "unsupported-platform"
     SPAWN_FAILED = "spawn-failed"
-    IO_ERROR = "pty-io-error"
+    IO_ERROR = "pseudo-terminal-io-error"
     COMMAND_FAILED = "command-failed"
     MISSING_SUCCESS_MARKER = "missing-success-marker"
     USERNAME_PROMPT_TIMEOUT = "username-prompt-timeout"
@@ -72,7 +72,7 @@ class PtyStatus(str, Enum):
 
 
 @dataclass(frozen=True)
-class PtyTimeouts:
+class PseudoTerminalTimeouts:
     """All timeout values are monotonic seconds and must be positive."""
 
     total: float = 20 * 60
@@ -90,10 +90,10 @@ class PtyTimeouts:
 
 
 @dataclass(frozen=True)
-class PtyRunResult:
-    """A credential-free summary of an onboarding PTY invocation."""
+class PseudoTerminalRunResult:
+    """A credential-free summary of one pseudo-terminal invocation."""
 
-    status: PtyStatus
+    status: PseudoTerminalStatus
     exit_code: Optional[int]
     username_prompt_seen: bool
     password_prompt_seen: bool
@@ -172,7 +172,7 @@ _MAX_PASSWORD_BYTES = 4096
 
 
 class _BoundedScanner:
-    """Bounded ASCII-case-folded PTY window with absolute token positions."""
+    """Bounded pseudo-terminal scan window with absolute token positions."""
 
     def __init__(self, limit: int) -> None:
         longest = max(
@@ -247,15 +247,15 @@ def _credentials_valid(username: bytearray, password: bytearray) -> bool:
 
 
 def _make_result(
-    status: PtyStatus,
+    status: PseudoTerminalStatus,
     exit_code: Optional[int],
     observed: _Observed,
     *,
     termination_requested: bool,
     kill_required: bool,
     scan_buffer_peak: int,
-) -> PtyRunResult:
-    return PtyRunResult(
+) -> PseudoTerminalRunResult:
+    return PseudoTerminalRunResult(
         status=status,
         exit_code=exit_code,
         username_prompt_seen=observed.username_prompt_seen,
@@ -281,9 +281,9 @@ def _make_result(
     )
 
 
-def _spawn_pty(command: tuple[str, ...], cwd: str) -> tuple[int, int]:
+def _spawn_pseudo_terminal(command: tuple[str, ...], cwd: str) -> tuple[int, int]:
     if fcntl is None or termios is None or not hasattr(os, "fork"):
-        raise OSError(errno.ENOSYS, "POSIX PTY support is unavailable")
+        raise OSError(errno.ENOSYS, "POSIX pseudo-terminal support is unavailable")
 
     master_fd, slave_fd = os.openpty()
     try:
@@ -315,7 +315,7 @@ def _spawn_pty(command: tuple[str, ...], cwd: str) -> tuple[int, int]:
             except BaseException:
                 # This fixed message contains neither exception text nor input.
                 try:
-                    os.write(2, b"pi-router-image-pty: exec failed\n")
+                    os.write(2, b"pi-router-pseudo-terminal: exec failed\n")
                 finally:
                     os._exit(127)
 
@@ -360,7 +360,7 @@ def _write_line(fd: int, value: bytearray, deadline: float) -> None:
             except BlockingIOError:
                 continue
             if written <= 0:
-                raise OSError(errno.EIO, "PTY write failed")
+                raise OSError(errno.EIO, "pseudo-terminal write failed")
             offset += written
 
         remaining = deadline - time.monotonic()
@@ -401,7 +401,7 @@ def _group_exists(pid: int) -> bool:
 
 
 def _read_once(fd: int, scanner: _BoundedScanner) -> bool:
-    """Read one bounded chunk; return False after PTY EOF."""
+    """Read one bounded chunk; return False after pseudo-terminal EOF."""
 
     try:
         # Never read more than half the retained window at once.  Combined
@@ -440,7 +440,7 @@ def _terminate_process_group(
     pid: int,
     master_fd: int,
     scanner: _BoundedScanner,
-    timeouts: PtyTimeouts,
+    timeouts: PseudoTerminalTimeouts,
     exit_code: Optional[int],
 ) -> tuple[Optional[int], bool]:
     """TERM then KILL the owned process group within fixed deadlines."""
@@ -499,10 +499,10 @@ def run_post_reboot(
     *,
     command: Sequence[str] = SETUP_ARGV,
     cwd: str = SETUP_CWD,
-    timeouts: PtyTimeouts = PtyTimeouts(),
+    timeouts: PseudoTerminalTimeouts = PseudoTerminalTimeouts(),
     max_scan_buffer: int = 16 * 1024,
-) -> PtyRunResult:
-    """Run the canonical post-reboot phase through a credential-safe PTY.
+) -> PseudoTerminalRunResult:
+    """Run the post-reboot phase through a credential-safe pseudo terminal.
 
     ``username`` and ``password`` must be mutable bytearrays.  Both are zeroed
     on every return path.  ``command`` and ``cwd`` exist for tests; production
@@ -517,7 +517,7 @@ def run_post_reboot(
     pid: Optional[int] = None
     master_fd: Optional[int] = None
     exit_code: Optional[int] = None
-    forced_status: Optional[PtyStatus] = None
+    forced_status: Optional[PseudoTerminalStatus] = None
     termination_requested = False
     kill_required = False
 
@@ -531,7 +531,7 @@ def run_post_reboot(
 
         if not _credentials_valid(username, password):
             return _make_result(
-                PtyStatus.INVALID_CREDENTIAL,
+                PseudoTerminalStatus.INVALID_CREDENTIAL,
                 None,
                 observed,
                 termination_requested=False,
@@ -551,7 +551,7 @@ def run_post_reboot(
 
         if fcntl is None or termios is None or not hasattr(os, "fork"):
             return _make_result(
-                PtyStatus.UNSUPPORTED_PLATFORM,
+                PseudoTerminalStatus.UNSUPPORTED_PLATFORM,
                 None,
                 observed,
                 termination_requested=False,
@@ -560,10 +560,10 @@ def run_post_reboot(
             )
 
         try:
-            pid, master_fd = _spawn_pty(command_tuple, cwd)
+            pid, master_fd = _spawn_pseudo_terminal(command_tuple, cwd)
         except OSError:
             return _make_result(
-                PtyStatus.SPAWN_FAILED,
+                PseudoTerminalStatus.SPAWN_FAILED,
                 None,
                 observed,
                 termination_requested=False,
@@ -581,13 +581,13 @@ def run_post_reboot(
         while exit_code is None and forced_status is None:
             now = time.monotonic()
             if not observed.username_prompt_seen and now >= username_deadline:
-                forced_status = PtyStatus.USERNAME_PROMPT_TIMEOUT
+                forced_status = PseudoTerminalStatus.USERNAME_PROMPT_TIMEOUT
                 break
             if password_deadline is not None and now >= password_deadline:
-                forced_status = PtyStatus.PASSWORD_PROMPT_TIMEOUT
+                forced_status = PseudoTerminalStatus.PASSWORD_PROMPT_TIMEOUT
                 break
             if now >= total_deadline:
-                forced_status = PtyStatus.TOTAL_TIMEOUT
+                forced_status = PseudoTerminalStatus.TOTAL_TIMEOUT
                 break
 
             nearest_deadline = total_deadline
@@ -605,7 +605,7 @@ def run_post_reboot(
                 if readable:
                     _read_once(master_fd, scanner)
             except OSError:
-                forced_status = PtyStatus.IO_ERROR
+                forced_status = PseudoTerminalStatus.IO_ERROR
                 break
 
             # Update noninteractive markers before prompts so a sign-in marker
@@ -620,12 +620,12 @@ def run_post_reboot(
                 _zero_bytearray(password)
 
             if scanner.contains(_SUDO_PROMPT):
-                forced_status = PtyStatus.UNEXPECTED_SUDO_PROMPT
+                forced_status = PseudoTerminalStatus.UNEXPECTED_SUDO_PROMPT
                 break
             if any(
                 scanner.contains(token) for token in _UNSUPPORTED_AUTH_TOKENS
             ):
-                forced_status = PtyStatus.UNSUPPORTED_AUTH_FLOW
+                forced_status = PseudoTerminalStatus.UNSUPPORTED_AUTH_FLOW
                 break
 
             username_positions = scanner.positions_after(
@@ -634,7 +634,7 @@ def run_post_reboot(
             for position in username_positions:
                 last_username_position = position
                 if observed.username_prompt_seen:
-                    forced_status = PtyStatus.REPEATED_USERNAME_PROMPT
+                    forced_status = PseudoTerminalStatus.REPEATED_USERNAME_PROMPT
                     break
                 observed.username_prompt_seen = True
                 try:
@@ -644,7 +644,7 @@ def run_post_reboot(
                         time.monotonic() + timeouts.write,
                     )
                 except (OSError, TimeoutError):
-                    forced_status = PtyStatus.IO_ERROR
+                    forced_status = PseudoTerminalStatus.IO_ERROR
                     break
                 finally:
                     # A partial write cannot be retried safely.  Discard the
@@ -667,11 +667,11 @@ def run_post_reboot(
             for position in password_positions:
                 last_password_position = position
                 if observed.password_prompt_seen:
-                    forced_status = PtyStatus.REPEATED_PASSWORD_PROMPT
+                    forced_status = PseudoTerminalStatus.REPEATED_PASSWORD_PROMPT
                     break
                 observed.password_prompt_seen = True
                 if not observed.username_sent or not observed.signin_started:
-                    forced_status = PtyStatus.UNEXPECTED_PASSWORD_PROMPT
+                    forced_status = PseudoTerminalStatus.UNEXPECTED_PASSWORD_PROMPT
                     break
                 try:
                     _write_line(
@@ -680,7 +680,7 @@ def run_post_reboot(
                         time.monotonic() + timeouts.write,
                     )
                 except (OSError, TimeoutError):
-                    forced_status = PtyStatus.IO_ERROR
+                    forced_status = PseudoTerminalStatus.IO_ERROR
                     break
                 finally:
                     _zero_bytearray(password)
@@ -715,19 +715,19 @@ def run_post_reboot(
                     _refresh_markers(scanner, observed)
             except OSError:
                 if forced_status is None:
-                    forced_status = PtyStatus.IO_ERROR
+                    forced_status = PseudoTerminalStatus.IO_ERROR
             _refresh_markers(scanner, observed)
 
         if forced_status is not None:
             final_status = forced_status
         elif exit_code != 0:
-            final_status = PtyStatus.COMMAND_FAILED
+            final_status = PseudoTerminalStatus.COMMAND_FAILED
         elif all(
             getattr(observed, field) for field in _SUCCESS_TOKENS
         ):
-            final_status = PtyStatus.SUCCESS
+            final_status = PseudoTerminalStatus.SUCCESS
         else:
-            final_status = PtyStatus.MISSING_SUCCESS_MARKER
+            final_status = PseudoTerminalStatus.MISSING_SUCCESS_MARKER
 
         return _make_result(
             final_status,

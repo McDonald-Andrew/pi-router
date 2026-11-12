@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Linux PTY tests for the image-owned browser onboarding runner."""
+"""Linux pseudo-terminal tests for the browser onboarding runner."""
 
 from __future__ import annotations
 
@@ -14,19 +14,21 @@ import time
 import unittest
 
 
-FIRSTBOOT_DIR = Path(__file__).resolve().parents[1] / "firstboot"
-sys.path.insert(0, str(FIRSTBOOT_DIR))
+WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
+sys.path.insert(0, str(WEB_DIR))
 
-from pi_router_image_pty import (  # noqa: E402
+from onboarding_pseudo_terminal import (  # noqa: E402
     SETUP_ARGV,
     SETUP_ENV,
-    PtyStatus,
-    PtyTimeouts,
+    PseudoTerminalStatus,
+    PseudoTerminalTimeouts,
     run_post_reboot,
 )
 
 
-POSIX_PTY = os.name == "posix" and hasattr(os, "fork") and hasattr(os, "openpty")
+POSIX_PSEUDO_TERMINAL = (
+    os.name == "posix" and hasattr(os, "fork") and hasattr(os, "openpty")
+)
 
 SUCCESS_OUTPUT = """\
 setup: Proton managed connection verified
@@ -48,8 +50,8 @@ def timeouts(
     password: float = 0.6,
     terminate: float = 0.12,
     kill: float = 0.12,
-) -> PtyTimeouts:
-    return PtyTimeouts(
+) -> PseudoTerminalTimeouts:
+    return PseudoTerminalTimeouts(
         total=total,
         username_prompt=username,
         password_prompt=password,
@@ -65,7 +67,7 @@ def run_fake(
     username: bytearray,
     password: bytearray,
     *,
-    configured_timeouts: PtyTimeouts | None = None,
+    configured_timeouts: PseudoTerminalTimeouts | None = None,
     max_scan_buffer: int = 1024,
 ):
     return run_post_reboot(
@@ -78,7 +80,7 @@ def run_fake(
     )
 
 
-class OnboardingPtyContractTests(unittest.TestCase):
+class OnboardingPseudoTerminalContractTests(unittest.TestCase):
     def test_production_command_and_environment_are_fixed(self) -> None:
         self.assertEqual(
             SETUP_ARGV,
@@ -107,8 +109,11 @@ class OnboardingPtyContractTests(unittest.TestCase):
         )
 
 
-@unittest.skipUnless(POSIX_PTY, "requires Linux/POSIX fork and PTY support")
-class OnboardingPtyTests(unittest.TestCase):
+@unittest.skipUnless(
+    POSIX_PSEUDO_TERMINAL,
+    "requires Linux/POSIX fork and pseudo-terminal support",
+)
+class OnboardingPseudoTerminalTests(unittest.TestCase):
     def test_split_prompts_success_and_credentials_are_zeroed(self) -> None:
         username_value = b"person@example.test"
         password_value = b"p@ss word value"
@@ -144,7 +149,7 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.SUCCESS)
+        self.assertEqual(result.status, PseudoTerminalStatus.SUCCESS)
         self.assertEqual(result.exit_code, 0)
         self.assertTrue(result.username_sent)
         self.assertTrue(result.password_sent)
@@ -175,7 +180,7 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.SUCCESS)
+        self.assertEqual(result.status, PseudoTerminalStatus.SUCCESS)
         self.assertTrue(result.authenticated_session_detected)
         self.assertTrue(result.username_sent)
         self.assertFalse(result.password_prompt_seen)
@@ -201,7 +206,9 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.REPEATED_PASSWORD_PROMPT)
+        self.assertEqual(
+            result.status, PseudoTerminalStatus.REPEATED_PASSWORD_PROMPT
+        )
         self.assertTrue(result.password_sent)
         self.assertTrue(result.termination_requested)
         self.assertEqual(username, bytearray(4))
@@ -225,7 +232,7 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.UNSUPPORTED_AUTH_FLOW)
+        self.assertEqual(result.status, PseudoTerminalStatus.UNSUPPORTED_AUTH_FLOW)
         self.assertTrue(result.termination_requested)
 
     def test_sudo_prompt_is_rejected_without_sending_any_credential(self) -> None:
@@ -241,7 +248,7 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.UNEXPECTED_SUDO_PROMPT)
+        self.assertEqual(result.status, PseudoTerminalStatus.UNEXPECTED_SUDO_PROMPT)
         self.assertFalse(result.username_sent)
         self.assertFalse(result.password_sent)
 
@@ -263,7 +270,7 @@ class OnboardingPtyTests(unittest.TestCase):
             configured_timeouts=timeouts(username=0.12),
         )
 
-        self.assertEqual(result.status, PtyStatus.USERNAME_PROMPT_TIMEOUT)
+        self.assertEqual(result.status, PseudoTerminalStatus.USERNAME_PROMPT_TIMEOUT)
         self.assertTrue(result.termination_requested)
         self.assertFalse(result.kill_required)
 
@@ -287,7 +294,7 @@ class OnboardingPtyTests(unittest.TestCase):
             configured_timeouts=timeouts(password=0.12),
         )
 
-        self.assertEqual(result.status, PtyStatus.PASSWORD_PROMPT_TIMEOUT)
+        self.assertEqual(result.status, PseudoTerminalStatus.PASSWORD_PROMPT_TIMEOUT)
         self.assertTrue(result.username_sent)
         self.assertFalse(result.password_sent)
 
@@ -312,7 +319,7 @@ class OnboardingPtyTests(unittest.TestCase):
         )
         elapsed = time.monotonic() - started
 
-        self.assertEqual(result.status, PtyStatus.TOTAL_TIMEOUT)
+        self.assertEqual(result.status, PseudoTerminalStatus.TOTAL_TIMEOUT)
         self.assertTrue(result.termination_requested)
         self.assertLess(elapsed, 1.0)
 
@@ -345,7 +352,7 @@ class OnboardingPtyTests(unittest.TestCase):
         )
         elapsed = time.monotonic() - started
 
-        self.assertEqual(result.status, PtyStatus.USERNAME_PROMPT_TIMEOUT)
+        self.assertEqual(result.status, PseudoTerminalStatus.USERNAME_PROMPT_TIMEOUT)
         self.assertTrue(result.termination_requested)
         self.assertTrue(result.kill_required)
         self.assertLess(elapsed, 1.5)
@@ -383,7 +390,7 @@ class OnboardingPtyTests(unittest.TestCase):
             configured_timeouts=timeouts(total=4, username=2, password=1),
         )
 
-        self.assertEqual(result.status, PtyStatus.SUCCESS)
+        self.assertEqual(result.status, PseudoTerminalStatus.SUCCESS)
         self.assertLessEqual(result.scan_buffer_peak, 256)
 
     def test_child_receives_only_fixed_environment_and_no_credential_argv(self) -> None:
@@ -422,10 +429,10 @@ class OnboardingPtyTests(unittest.TestCase):
 
         result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.SUCCESS)
+        self.assertEqual(result.status, PseudoTerminalStatus.SUCCESS)
         self.assertEqual(result.exit_code, 0)
 
-    def test_raw_pty_output_is_not_returned_or_logged(self) -> None:
+    def test_raw_pseudo_terminal_output_is_not_returned_or_logged(self) -> None:
         username_value = b"raw-output-user-canary"
         password_value = b"raw-output-password-canary"
         username = bytearray(username_value)
@@ -446,7 +453,7 @@ class OnboardingPtyTests(unittest.TestCase):
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             result = run_fake(source, username, password)
 
-        self.assertEqual(result.status, PtyStatus.SUCCESS)
+        self.assertEqual(result.status, PseudoTerminalStatus.SUCCESS)
         self.assertEqual(result.exit_code, 0)
         self.assertEqual(username, bytearray(len(username_value)))
         self.assertEqual(password, bytearray(len(password_value)))
@@ -468,7 +475,7 @@ class OnboardingPtyTests(unittest.TestCase):
         result = run_fake(source, username, password)
 
         self.assertEqual(result.exit_code, 0)
-        self.assertEqual(result.status, PtyStatus.MISSING_SUCCESS_MARKER)
+        self.assertEqual(result.status, PseudoTerminalStatus.MISSING_SUCCESS_MARKER)
 
     def test_nonzero_exit_is_command_failure(self) -> None:
         username = bytearray(b"user")
@@ -484,7 +491,7 @@ class OnboardingPtyTests(unittest.TestCase):
         result = run_fake(source, username, password)
 
         self.assertEqual(result.exit_code, 37)
-        self.assertEqual(result.status, PtyStatus.COMMAND_FAILED)
+        self.assertEqual(result.status, PseudoTerminalStatus.COMMAND_FAILED)
 
     def test_control_credentials_are_rejected_and_zeroed_before_spawn(self) -> None:
         for username_value, password_value in (
@@ -497,7 +504,9 @@ class OnboardingPtyTests(unittest.TestCase):
 
                 result = run_fake("raise SystemExit(99)", username, password)
 
-                self.assertEqual(result.status, PtyStatus.INVALID_CREDENTIAL)
+                self.assertEqual(
+                    result.status, PseudoTerminalStatus.INVALID_CREDENTIAL
+                )
                 self.assertIsNone(result.exit_code)
                 self.assertEqual(username, bytearray(len(username_value)))
                 self.assertEqual(password, bytearray(len(password_value)))

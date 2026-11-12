@@ -213,7 +213,8 @@ def validate_credential_frame(frame: bytearray) -> tuple[int, int]:
         for part in (username, password):
             # The credentials cross a terminal after this boundary. Reject
             # every ASCII control byte (including ISIG/EOF characters), not
-            # only line delimiters, before the PTY can interpret it.
+            # only line delimiters, before the pseudo terminal can interpret
+            # them.
             if any(byte < 0x20 or byte == 0x7F for byte in part):
                 raise InvalidCredentialFrame()
             if not _valid_utf8(part):
