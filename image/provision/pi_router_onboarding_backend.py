@@ -55,7 +55,7 @@ except ImportError:  # pragma: no cover - Windows only.
 
 SOCKET_PATH: Final = Path("/run/pi-router-image/onboarding.sock")
 RUNTIME_DIRECTORY: Final = SOCKET_PATH.parent
-FIRSTBOOT_LOCK: Final = Path("/run/lock/pi-router-image-controller.lock")
+PROVISIONER_LOCK: Final = Path("/run/lock/pi-router-image-controller.lock")
 STATE_DIRECTORY: Final = Path("/var/lib/pi-router-image")
 CHECKPOINT_PATH: Final = Path(
     "/var/lib/pi-router-setup/reboot-required.boot-id"
@@ -185,7 +185,7 @@ class BackendPaths:
 
     @property
     def lock(self) -> Path:
-        return self.path(FIRSTBOOT_LOCK)
+        return self.path(PROVISIONER_LOCK)
 
     @property
     def state_directory(self) -> Path:
@@ -383,7 +383,7 @@ class OnboardingBackend:
         self.release_override = release_override
         self.success_status_grace_seconds = success_status_grace_seconds
         self._worker_launcher = worker_launcher or self._launch_thread
-        self._lock_factory = lock_factory or self._firstboot_lock
+        self._lock_factory = lock_factory or self._provisioner_lock
         self._guard = threading.Lock()
         self._worker_active = False
         self._accepting = True
@@ -598,7 +598,7 @@ class OnboardingBackend:
         return release
 
     @contextlib.contextmanager
-    def _firstboot_lock(self) -> Iterator[None]:
+    def _provisioner_lock(self) -> Iterator[None]:
         if fcntl is None:  # pragma: no cover - production is Linux.
             raise BackendFault("internal-error")
         path = self.paths.lock

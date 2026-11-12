@@ -453,7 +453,7 @@ install_system_source() {
     [[ -f "$source" ]] ||
         die "missing source file: $source"
 
-    # The image firstboot service deliberately runs with UMask=0077, unlike
+    # The image provisioner deliberately runs with UMask=0077, unlike
     # the normal interactive installer environment. Specify 0755 here so
     # system service users can traverse shared artifact directories; this is
     # the same effective mode the original installer receives under 0022.

@@ -44,7 +44,7 @@ require_literal "$ANSWERS" 'LAN_IF=""'
 require_literal "$ANSWERS" 'WAN_IF=""'
 
 if grep -R -n -E \
-    'pi-router-(firstboot|onboarding)|/var/lib/pi-router-image|/opt/pi-router/current' \
+    'pi-router-(image-controller|onboarding)|/var/lib/pi-router-image|/opt/pi-router/current' \
     "$REPOSITORY_ROOT/src/setup" \
     "$REPOSITORY_ROOT/windows-installer"
 then

@@ -105,7 +105,7 @@ esac
 [[ "$base_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid base image SHA-256"
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-asset_dir="$script_dir/../firstboot"
+asset_dir="$script_dir/../provision"
 release_dir="pi-router-v$version"
 release_path="$root/opt/pi-router/releases/$release_dir"
 repository_metadata="$release_path/config/proton-repository.conf"
@@ -303,7 +303,7 @@ assert_copy \
     "$asset_dir/pi-router-image.conf" \
     "$root/etc/pi-router-image.conf" \
     "0:0:600" \
-    "firstboot setup defaults"
+    "provisioning setup defaults"
 assert_copy \
     "$asset_dir/pi-router-sshd.conf" \
     "$root/etc/ssh/sshd_config.d/60-pi-router-admin.conf" \
@@ -350,7 +350,7 @@ for unit in "${audited_units[@]}"; do
 done
 
 [[ "$(unit_state pi-router-image-controller.timer)" == enabled ]] ||
-    fail "firstboot timer is not enabled"
+    fail "provisioner timer is not enabled"
 for unit in \
     pi-router-image-controller.service \
     pi-router-onboarding-server.service \

@@ -1,5 +1,5 @@
 [Unit]
-Description=Retry Pi Router first-boot provisioning gates
+Description=Retry Pi Router provisioning gates
 
 [Timer]
 OnBootSec=10s

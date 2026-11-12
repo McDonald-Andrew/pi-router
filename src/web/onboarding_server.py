@@ -3,7 +3,7 @@
 
 This process is deliberately unprivileged.  It serves a very small HTTPS
 application on the provisioning LAN and forwards one bounded credential frame
-to the privileged first-boot broker over an AF_UNIX SOCK_SEQPACKET socket.  It
+to the privileged provisioning broker over an AF_UNIX SOCK_SEQPACKET socket. It
 never executes setup, changes durable state, or writes credentials to disk.
 """
 

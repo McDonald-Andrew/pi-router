@@ -56,7 +56,7 @@ sign-in, complete both required reboots, and reach
 
 The builder verifies the exact official Raspberry Pi OS Desktop 64-bit
 download pinned in `image/base-image.env`, mounts its partitions, and modifies
-files offline. It installs the exact versioned `src/` release, first-boot
+files offline. It installs the exact versioned `src/` release, provisioning
 controller, browser onboarding service, safety guards, and build metadata. It
 preserves the official locked user placeholder and cloud-init packages rather
 than manufacturing an OS account. It sanitizes cloneable state, performs a
@@ -70,7 +70,7 @@ differ; the official `init_format` and applicable capabilities remain
 authoritative.
 
 The only setup call made by the builder is the existing host-safe staging call
-needed before the Waveshare NIC can appear on the first Pi boot:
+needed before the Waveshare NIC can appear during initial Pi provisioning:
 
 ```bash
 bash /mounted/opt/pi-router/current/setup \
@@ -80,12 +80,13 @@ bash /mounted/opt/pi-router/current/setup \
     --non-interactive
 ```
 
-On the Pi, firstboot calls the existing `config` and `pre-reboot` phases. The
-unchanged `pre-reboot` phase owns file/package installation, hardware role
-detection, network cutover, firewall/DNS policy, services, and the first reboot
-checkpoint. After that reboot, the temporary LAN-only browser service drives
-the unchanged interactive `post-reboot` phase. After the final reboot,
-firstboot calls `final-verify` and creates readiness only on proven success.
+On the Pi, the provisioner calls the existing `config` and `pre-reboot`
+phases. The unchanged `pre-reboot` phase owns file/package installation,
+hardware role detection, network cutover, firewall/DNS policy, services, and
+the first reboot checkpoint. After that reboot, the temporary LAN-only browser
+service drives the unchanged interactive `post-reboot` phase. After the final
+reboot, the provisioner calls `final-verify` and creates readiness only on
+proven success.
 
 ## Progress points
 
@@ -117,7 +118,7 @@ firstboot calls `final-verify` and creates readiness only on proven success.
 Acceptance: a verified `.img.xz` boots Raspberry Pi OS Desktop on the required
 Pi without having run any target ARM binary during image construction.
 
-### P2 - Stage only first-boot prerequisites offline
+### P2 - Stage only provisioning prerequisites offline
 
 - [x] Use setup's staging `boot` phase to add exactly one PCIe x1 setting and
   reject a Gen3 override without duplicating setup logic.
@@ -127,7 +128,7 @@ Pi without having run any target ARM binary during image construction.
   network-facing services disabled before provisioning.
 - [x] Keep IPv4 forwarding off with a temporary image-owned sysctl guard.
 - [x] Install a temporary `policy-rc.d` so package maintainer scripts cannot
-  start services during firstboot setup.
+  start services during provisioning.
 - [x] Leave package download/installation, NetworkManager profiles, generated
   firewall/DNS files, and Proton work to native setup on the Pi.
 - [x] Prove the staged files and service states against a completed exported
@@ -136,7 +137,7 @@ Pi without having run any target ARM binary during image construction.
 Acceptance: the image contains prerequisites and guards, not a second copy of
 setup's installation logic or pre-generated machine-specific configuration.
 
-### P3 - Prepare unique first-boot identity
+### P3 - Prepare unique provisioning identity
 
 - [x] Export `/etc/machine-id` in the documented uninitialized state and remove
   the D-Bus alias, random seed, cached NetworkManager state, and Bluetooth
@@ -150,9 +151,9 @@ setup's installation logic or pre-generated machine-specific configuration.
 - [ ] Write the same image to two cards and prove machine IDs, SSH host keys,
   and NetworkManager UUID sets differ.
 
-### P4 - Implement resumable first-boot orchestration
+### P4 - Implement resumable provisioning orchestration
 
-- [x] Install the timer-driven, locked firstboot controller.
+- [x] Install the timer-driven, locked provisioner.
 - [x] Make state and attempt records atomic and durable with file and directory
   fsync boundaries.
 - [x] Advance only from setup success/checkpoint proof; never forge or repair a
@@ -227,7 +228,7 @@ setup's installation logic or pre-generated machine-specific configuration.
 - [x] Make the builder mount and audit the customized root before compression
   and the exported image read-only after compression.
 - [x] Verify provenance metadata, service guards, the official locked user
-  placeholder, cloud-init, PCIe config, firstboot assets, and absence of
+  placeholder, cloud-init, PCIe config, provisioning assets, and absence of
   cloneable/private state.
 - [x] Run the mounted-image audits against one completed real artifact.
 - [ ] Complete the remaining durability fault-injection matrix.
@@ -281,7 +282,7 @@ setup's installation logic or pre-generated machine-specific configuration.
   it directly in Raspberry Pi Imager 2.x.
 - [x] Require the user to enter the exact username `admin`, choose a password,
   and choose whether SSH is disabled, password-based, or key-based.
-- [x] Start Pi Router firstboot only after the official cloud-init target.
+- [x] Start the Pi Router provisioner only after the official cloud-init target.
 - [x] Fail before router setup unless `admin` exists with UID/GID 1000, the
   expected home/shell, and a password set by the official customization flow.
 - [x] Keep SSH bound to the provisioning LAN, preserve Imager's authentication

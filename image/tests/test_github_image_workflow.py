@@ -19,7 +19,7 @@ class GitHubImageWorkflowTests(unittest.TestCase):
         self.assertIn("image src/web/*.py", self.verify)
         self.assertIn("python3 -m compileall -q image src/web", self.verify)
         self.assertIn("node --check src/web/onboarding-app.js", self.verify)
-        self.assertNotIn("image/firstboot/onboarding-app.js", self.verify)
+        self.assertNotIn("image/provision/onboarding-app.js", self.verify)
 
     def test_release_is_the_single_image_workflow(self) -> None:
         self.assertIn("workflow_dispatch:", self.release)

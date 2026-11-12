@@ -80,14 +80,15 @@ repository_metadata="$release_path/config/proton-repository.conf"
 chown -R root:root "$release_path"
 # Git archives can carry 0664 files and 0775 directories. Remove writable
 # group/other bits from the complete release tree before applying the few
-# exact modes required by first boot.
+# exact modes required by provisioning.
 find "$release_path" -xdev \( -type f -o -type d \) -exec chmod go-w {} +
 chmod 0755 "$release_path/setup"
 chmod 0644 "$repository_metadata"
 ln -s "releases/$release_name" "$root/opt/pi-router/current"
 
-# The PCIe NIC must be visible on the first hardware boot. Run setup's public
-# staging-mode boot phase with the host Bash; no target ARM binary is executed.
+# The PCIe NIC must be visible during initial hardware provisioning. Run
+# setup's public staging-mode boot phase with the host Bash; no target ARM
+# binary is executed.
 bash "$release_path/setup" \
     --root "$root" \
     --phase boot \
@@ -111,7 +112,7 @@ bash "$release_path/setup" \
 [[ "$(stat -c '%u:%g:%a' "$root/home/pi")" == '1000:1000:700' ]] ||
     die "pinned base UID 1000 home metadata changed"
 
-# Install the isolated first-boot stack before creating its service account.
+# Install the isolated provisioning stack before creating its service account.
 install -D -o root -g root -m 0600 \
     "$provision_source/pi-router-image.conf" \
     "$root/etc/pi-router-image.conf"

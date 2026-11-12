@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Resumable first-boot controller for the Pi Router image.
+"""Resumable provisioning controller for the Pi Router image.
 
 This module deliberately treats the versioned ``setup`` executable as the
 authority for router installation.  It orchestrates public setup phases and
@@ -264,7 +264,7 @@ def _mode(metadata: os.stat_result) -> int:
     return stat.S_IMODE(metadata.st_mode)
 
 
-class FirstbootController:
+class ProvisioningController:
     """One idempotent pass through the image provisioning state machine."""
 
     SYSTEMCTL: Final = "/usr/bin/systemctl"
@@ -515,7 +515,7 @@ class FirstbootController:
         # A failed multi-unit stop can still leave both units inactive (for
         # example, if one was already stopped).  Only treat that as success
         # when systemd explicitly confirms a non-running ActiveState for each
-        # unit.  Unknown or empty results retain the firstboot timer so the
+        # unit. Unknown or empty results retain the provisioner timer so the
         # cleanup is retried.
         for unit in (
             "pi-router-onboarding-server.service",
@@ -1206,7 +1206,7 @@ class FirstbootController:
             self.paths.forwarding_guard,
             expected_mode=0o644,
             expected_content=(
-                "# Temporary image-build guard. Firstboot removes this only after setup's\n"
+                "# Temporary image-build guard. The provisioner removes this only after setup's\n"
                 "# pre-reboot checkpoint proves the canonical fail-closed firewall was applied.\n"
                 "net.ipv4.ip_forward=0\n"
             ),
@@ -1228,7 +1228,7 @@ class FirstbootController:
             expected_mode=0o755,
             expected_content=(
                 "#!/bin/sh\n"
-                "# Temporary image-owned guard: package installation during setup's first-boot\n"
+                "# Temporary image-owned guard: package installation during provisioning\n"
                 "# pre-reboot phase must not start services before setup applies router policy.\n"
                 "exit 101\n"
             ),
@@ -1562,7 +1562,7 @@ class FirstbootController:
     @contextlib.contextmanager
     def lock(self) -> Iterator[None]:
         if fcntl is None:  # pragma: no cover - production is Linux.
-            raise RuntimeError("firstboot lock requires POSIX fcntl")
+            raise RuntimeError("provisioner lock requires POSIX fcntl")
         self.paths.lock.parent.mkdir(parents=True, exist_ok=True)
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0)
         flags |= getattr(os, "O_NOFOLLOW", 0)
@@ -1594,7 +1594,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    controller = FirstbootController()
+    controller = ProvisioningController()
     try:
         outcome = controller.run_locked()
     except ImageStateError as exc:

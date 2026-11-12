@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Callable, Sequence
 from unittest import mock
 
-
 PROVISION_DIR = Path(__file__).resolve().parents[1] / "provision"
 WEB_DIR = Path(__file__).resolve().parents[2] / "src/web"
 sys.path.insert(0, str(PROVISION_DIR))
@@ -17,7 +16,6 @@ sys.path.insert(0, str(WEB_DIR))
 import pi_router_image_controller as controller_module  # noqa: E402
 import pi_router_image_state as image_state  # noqa: E402
 import onboarding_server  # noqa: E402
-
 
 BOOT_A = "01234567-89ab-4def-8123-456789abcdef"
 BOOT_B = "11234567-89ab-4def-8123-456789abcdef"
@@ -96,10 +94,7 @@ def default_result(command: tuple[str, ...]) -> controller_module.CommandResult:
 class FakeRunner(controller_module.CommandRunner):
     def __init__(
         self,
-        callback: Callable[
-            [tuple[str, ...]], controller_module.CommandResult
-        ]
-        | None = None,
+        callback: Callable[[tuple[str, ...]], controller_module.CommandResult] | None = None,
     ) -> None:
         self.commands: list[tuple[str, ...]] = []
         self.callback = callback
@@ -143,7 +138,7 @@ class ControllerFixture:
         self.write("/sys/class/net/wan0/carrier", "1\n", 0o644)
         self.write(
             "/etc/sysctl.d/zz-pi-router-image-bootstrap.conf",
-            "# Temporary image-build guard. Firstboot removes this only after setup's\n"
+            "# Temporary image-build guard. The provisioner removes this only after setup's\n"
             "# pre-reboot checkpoint proves the canonical fail-closed firewall was applied.\n"
             "net.ipv4.ip_forward=0\n",
             0o644,
@@ -151,7 +146,7 @@ class ControllerFixture:
         self.write(
             "/usr/sbin/policy-rc.d",
             "#!/bin/sh\n"
-            "# Temporary image-owned guard: package installation during setup's first-boot\n"
+            "# Temporary image-owned guard: package installation during provisioning\n"
             "# pre-reboot phase must not start services before setup applies router policy.\n"
             "exit 101\n",
             0o755,
@@ -183,9 +178,7 @@ BYPASS_RULE_PRIORITY="10000"
         return path
 
     def write_checkpoint(self, value: str, *, mode: int = 0o600) -> Path:
-        return self.write(
-            "/var/lib/pi-router-setup/reboot-required.boot-id", value, mode
-        )
+        return self.write("/var/lib/pi-router-setup/reboot-required.boot-id", value, mode)
 
     def remove_checkpoint(self) -> None:
         try:
@@ -208,9 +201,7 @@ BYPASS_RULE_PRIORITY="10000"
         )
 
     def store(self) -> image_state.ImageStateStore:
-        return image_state.ImageStateStore(
-            self.paths.state_dir, expected_uid=None, expected_gid=None
-        )
+        return image_state.ImageStateStore(self.paths.state_dir, expected_uid=None, expected_gid=None)
 
     def controller(
         self,
@@ -218,8 +209,8 @@ BYPASS_RULE_PRIORITY="10000"
         *,
         boot_id: str | None = None,
         final_service_max_failures: int = controller_module.FINAL_SERVICE_MAX_FAILURES,
-    ) -> controller_module.FirstbootController:
-        return controller_module.FirstbootController(
+    ) -> controller_module.ProvisioningController:
+        return controller_module.ProvisioningController(
             paths=self.paths,
             runner=runner,
             store=self.store(),
@@ -279,12 +270,16 @@ BYPASS_RULE_PRIORITY="10000"
         )
 
 
-class FirstbootControllerTests(unittest.TestCase):
+class ProvisioningControllerTests(unittest.TestCase):
     def test_imager_admin_contract_is_checked_before_router_setup(self) -> None:
         fixture = ControllerFixture(self)
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if command == (controller_module.FirstbootController.GETENT, "passwd", "admin"):
+            if command == (
+                controller_module.ProvisioningController.GETENT,
+                "passwd",
+                "admin",
+            ):
                 return result(2)
             return default_result(command)
 
@@ -299,7 +294,11 @@ class FirstbootControllerTests(unittest.TestCase):
         fixture = ControllerFixture(self)
 
         def locked(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if command == (controller_module.FirstbootController.PASSWD, "--status", "admin"):
+            if command == (
+                controller_module.ProvisioningController.PASSWD,
+                "--status",
+                "admin",
+            ):
                 return result(0, "admin L 2026-11-06 0 99999 7 -1\n")
             return default_result(command)
 
@@ -379,9 +378,7 @@ class FirstbootControllerTests(unittest.TestCase):
         self.assertEqual(fixture.controller(runner).run_once(), "waiting-carrier")
         self.assertIsNone(store.read_attempt())
         phases = [
-            command[command.index("--phase") + 1]
-            for command in runner.commands
-            if "--phase" in command
+            command[command.index("--phase") + 1] for command in runner.commands if "--phase" in command
         ]
         self.assertEqual(phases, ["config"])
 
@@ -434,15 +431,13 @@ class FirstbootControllerTests(unittest.TestCase):
         commands = [" ".join(command) for command in runner.commands]
         self.assertTrue(
             any(
-                "connection add type ethernet con-name pi-router-image-wan-bootstrap"
-                in command
+                "connection add type ethernet con-name pi-router-image-wan-bootstrap" in command
                 for command in commands
             )
         )
         self.assertTrue(
             any(
-                "connection up id pi-router-image-wan-bootstrap ifname wan0"
-                in command
+                "connection up id pi-router-image-wan-bootstrap ifname wan0" in command
                 for command in commands
             )
         )
@@ -451,7 +446,7 @@ class FirstbootControllerTests(unittest.TestCase):
         fixture = ControllerFixture(self)
         fixture.write(
             f"/opt/pi-router/releases/{RELEASE.name}/config/proton-repository.conf",
-            '# release-owned metadata\n'
+            "# release-owned metadata\n"
             'PROTON_REPO_HOST="packages.example.test"\n'
             'PROTON_REPO_PATH="/repository/stable"\n'
             'PROTON_REPO_PACKAGE="bootstrap_2.0_all.deb"\n',
@@ -524,8 +519,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 'PROTON_REPO_PACKAGE="../bootstrap.deb"\n'
             ),
             "missing-package": (
-                'PROTON_REPO_HOST="packages.example.test"\n'
-                'PROTON_REPO_PATH="/repository/stable"\n'
+                'PROTON_REPO_HOST="packages.example.test"\n' 'PROTON_REPO_PATH="/repository/stable"\n'
             ),
             "duplicate-host": (
                 'PROTON_REPO_HOST="packages.example.test"\n'
@@ -543,26 +537,18 @@ class FirstbootControllerTests(unittest.TestCase):
                     0o644,
                 )
 
-                self.assertEqual(
-                    fixture.controller(FakeRunner()).run_once(), "terminal"
-                )
-                self.assertEqual(
-                    fixture.store().read_error().code, "release-integrity"
-                )
+                self.assertEqual(fixture.controller(FakeRunner()).run_once(), "terminal")
+                self.assertEqual(fixture.store().read_error().code, "release-integrity")
 
     def test_pre_success_commits_removes_guard_and_requests_reboot(self) -> None:
         fixture = ControllerFixture(self)
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot":
                 fixture.write_checkpoint(f"{BOOT_A}\n")
                 return result(
                     0,
-                    "setup: pre-reboot stage complete\n"
-                    "setup: REBOOT REQUIRED before post-reboot\n",
+                    "setup: pre-reboot stage complete\n" "setup: REBOOT REQUIRED before post-reboot\n",
                 )
             return default_result(command)
 
@@ -590,7 +576,7 @@ class FirstbootControllerTests(unittest.TestCase):
             ),
             runner.commands,
         )
-        # The timer must survive this reboot so firstboot runs again on the
+        # The timer must survive this reboot so the provisioner runs again on the
         # next boot; onboarding has not started yet, so there is nothing to
         # stop here.
         self.assertNotIn(
@@ -617,36 +603,26 @@ class FirstbootControllerTests(unittest.TestCase):
         fixture.paths.package_service_guard.unlink()
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot":
                 fixture.write_checkpoint(f"{BOOT_A}\n")
                 return result(
                     0,
-                    "setup: pre-reboot stage complete\n"
-                    "setup: REBOOT REQUIRED before post-reboot\n",
+                    "setup: pre-reboot stage complete\n" "setup: REBOOT REQUIRED before post-reboot\n",
                 )
             return default_result(command)
 
-        self.assertEqual(
-            fixture.controller(FakeRunner(callback)).run_once(), "reboot-requested"
-        )
+        self.assertEqual(fixture.controller(FakeRunner(callback)).run_once(), "reboot-requested")
         self.assertEqual(fixture.store().read_state(), "pre-reboot-complete")
 
     def test_imager_selected_ssh_starts_only_after_firewall_cutover(self) -> None:
         fixture = ControllerFixture(self)
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot":
                 fixture.write_checkpoint(f"{BOOT_A}\n")
                 return result(
                     0,
-                    "setup: pre-reboot stage complete\n"
-                    "setup: REBOOT REQUIRED before post-reboot\n",
+                    "setup: pre-reboot stage complete\n" "setup: REBOOT REQUIRED before post-reboot\n",
                 )
             if command == ("/usr/bin/systemctl", "is-enabled", "ssh.service"):
                 return result(0, "enabled\n")
@@ -661,20 +637,14 @@ class FirstbootControllerTests(unittest.TestCase):
 
     def test_changed_package_service_guard_fails_closed(self) -> None:
         fixture = ControllerFixture(self)
-        fixture.paths.package_service_guard.write_text(
-            "#!/bin/sh\nexit 0\n", encoding="ascii"
-        )
+        fixture.paths.package_service_guard.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot":
                 fixture.write_checkpoint(f"{BOOT_A}\n")
                 return result(
                     0,
-                    "setup: pre-reboot stage complete\n"
-                    "setup: REBOOT REQUIRED before post-reboot\n",
+                    "setup: pre-reboot stage complete\n" "setup: REBOOT REQUIRED before post-reboot\n",
                 )
             return default_result(command)
 
@@ -692,9 +662,7 @@ class FirstbootControllerTests(unittest.TestCase):
         with mock.patch.object(
             controller.store,
             "write_attempt",
-            side_effect=image_state.StateDurabilityError(
-                "injected crash before attempt write"
-            ),
+            side_effect=image_state.StateDurabilityError("injected crash before attempt write"),
         ):
             with self.assertRaises(image_state.StateDurabilityError):
                 controller.run_once()
@@ -703,8 +671,7 @@ class FirstbootControllerTests(unittest.TestCase):
         self.assertIsNone(fixture.store().read_attempt())
         self.assertFalse(
             any(
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
+                "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot"
                 for command in controller.runner.commands
             )
         )
@@ -716,9 +683,7 @@ class FirstbootControllerTests(unittest.TestCase):
 
         def write_then_fail(attempt: image_state.Attempt) -> image_state.Attempt:
             real_write_attempt(attempt)
-            raise image_state.StateDurabilityError(
-                "injected crash after attempt write"
-            )
+            raise image_state.StateDurabilityError("injected crash after attempt write")
 
         with mock.patch.object(
             controller.store,
@@ -732,8 +697,7 @@ class FirstbootControllerTests(unittest.TestCase):
         self.assertEqual(fixture.store().read_attempt(), fixture.pre_attempt())
         self.assertFalse(
             any(
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "pre-reboot"
+                "--phase" in command and command[command.index("--phase") + 1] == "pre-reboot"
                 for command in controller.runner.commands
             )
         )
@@ -784,17 +748,14 @@ class FirstbootControllerTests(unittest.TestCase):
                 fixture.write_checkpoint(f"{BOOT_B}\n")
                 return result(
                     0,
-                    "setup: pre-reboot stage complete\n"
-                    "setup: REBOOT REQUIRED before post-reboot\n",
+                    "setup: pre-reboot stage complete\n" "setup: REBOOT REQUIRED before post-reboot\n",
                 )
             return default_result(command)
 
         runner = FakeRunner(callback)
         self.assertEqual(fixture.controller(runner).run_once(), "reboot-requested")
         phases = [
-            command[command.index("--phase") + 1]
-            for command in runner.commands
-            if "--phase" in command
+            command[command.index("--phase") + 1] for command in runner.commands if "--phase" in command
         ]
         self.assertEqual(phases, ["pre-reboot-resume"])
         self.assertIn(
@@ -932,8 +893,7 @@ class FirstbootControllerTests(unittest.TestCase):
         self.assertIsNone(store.read_ready())
         self.assertFalse(
             any(
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "final-verify"
+                "--phase" in command and command[command.index("--phase") + 1] == "final-verify"
                 for command in runner.commands
             )
         )
@@ -971,9 +931,7 @@ class FirstbootControllerTests(unittest.TestCase):
         store.write_attempt(fixture.post_attempt())
         fixture.write_checkpoint(f"{BOOT_A}\n")
 
-        self.assertEqual(
-            fixture.controller(FakeRunner()).run_once(), "waiting-onboarding"
-        )
+        self.assertEqual(fixture.controller(FakeRunner()).run_once(), "waiting-onboarding")
         self.assertEqual(store.read_state(), "pre-reboot-complete")
         self.assertIsNone(store.read_attempt())
 
@@ -992,9 +950,7 @@ class FirstbootControllerTests(unittest.TestCase):
                 return result(1)
             return default_result(command)
 
-        self.assertEqual(
-            fixture.controller(FakeRunner(callback)).run_once(), "waiting-desktop"
-        )
+        self.assertEqual(fixture.controller(FakeRunner(callback)).run_once(), "waiting-desktop")
         self.assertEqual(store.read_status().code, "waiting-desktop")
 
     def test_final_success_consumes_checkpoint_and_creates_ready(self) -> None:
@@ -1036,10 +992,7 @@ class FirstbootControllerTests(unittest.TestCase):
         def first_callback(
             command: tuple[str, ...],
         ) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "final-verify"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "final-verify":
                 fixture.remove_checkpoint()
                 return result(0, "setup: FINAL VERIFICATION PASSED\n")
             if command[:2] == ("/usr/bin/systemctl", "stop"):
@@ -1115,16 +1068,11 @@ class FirstbootControllerTests(unittest.TestCase):
         fixture.write_checkpoint(f"{BOOT_B}\n")
 
         def callback(command: tuple[str, ...]) -> controller_module.CommandResult:
-            if (
-                "--phase" in command
-                and command[command.index("--phase") + 1] == "final-verify"
-            ):
+            if "--phase" in command and command[command.index("--phase") + 1] == "final-verify":
                 return result(0, "setup: FINAL VERIFICATION PASSED\n")
             return default_result(command)
 
-        self.assertEqual(
-            fixture.controller(FakeRunner(callback)).run_once(), "terminal"
-        )
+        self.assertEqual(fixture.controller(FakeRunner(callback)).run_once(), "terminal")
         self.assertEqual(store.read_error().code, "setup-final-failed")
         self.assertEqual(store.read_state(), "post-reboot-complete")
         self.assertIsNone(store.read_ready())
@@ -1146,13 +1094,9 @@ class FirstbootControllerTests(unittest.TestCase):
             return default_result(command)
 
         runner = FakeRunner(callback)
-        self.assertEqual(
-            fixture.controller(runner).run_once(), "waiting-final-services"
-        )
+        self.assertEqual(fixture.controller(runner).run_once(), "waiting-final-services")
         self.assertEqual(store.read_status().code, "waiting-final-services")
-        self.assertEqual(
-            store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1)
-        )
+        self.assertEqual(store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1))
         self.assertFalse(any("--phase" in command for command in runner.commands))
 
     def test_final_service_wait_is_bounded_and_terminal(self) -> None:
@@ -1171,26 +1115,18 @@ class FirstbootControllerTests(unittest.TestCase):
                 return result(3)
             return default_result(command)
 
-        controller = fixture.controller(
-            FakeRunner(callback), final_service_max_failures=2
-        )
+        controller = fixture.controller(FakeRunner(callback), final_service_max_failures=2)
         self.assertEqual(controller.run_once(), "waiting-final-services")
-        self.assertEqual(
-            store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1)
-        )
+        self.assertEqual(store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1))
 
         self.assertEqual(
-            fixture.controller(
-                FakeRunner(callback), final_service_max_failures=2
-            ).run_once(),
+            fixture.controller(FakeRunner(callback), final_service_max_failures=2).run_once(),
             "terminal",
         )
         self.assertEqual(store.read_error().code, "final-services-timeout")
         self.assertEqual(store.read_state(), "post-reboot-complete")
         self.assertIsNone(store.read_ready())
-        self.assertEqual(
-            store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 2)
-        )
+        self.assertEqual(store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 2))
 
     def test_final_service_wait_resets_for_a_different_boot(self) -> None:
         fixture = ControllerFixture(self, boot_id=BOOT_C)
@@ -1213,9 +1149,7 @@ class FirstbootControllerTests(unittest.TestCase):
             fixture.controller(FakeRunner(callback)).run_once(),
             "waiting-final-services",
         )
-        self.assertEqual(
-            store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1)
-        )
+        self.assertEqual(store.read_final_wait(), image_state.FinalServiceWait(BOOT_C, 1))
 
     def test_current_final_failure_after_checkpoint_consumption_needs_recovery_pass(
         self,
@@ -1297,9 +1231,7 @@ class FirstbootControllerTests(unittest.TestCase):
             proof: str,
         ) -> image_state.ReadyReceipt:
             real_write_ready(release_name, completed_boot_id, proof)
-            raise image_state.StateDurabilityError(
-                "injected crash after ready receipt write"
-            )
+            raise image_state.StateDurabilityError("injected crash after ready receipt write")
 
         with mock.patch.object(
             controller.store,
@@ -1328,9 +1260,7 @@ class FirstbootControllerTests(unittest.TestCase):
         with mock.patch.object(
             controller.store,
             "write_state",
-            side_effect=image_state.StateDurabilityError(
-                "injected crash before ready state write"
-            ),
+            side_effect=image_state.StateDurabilityError("injected crash before ready state write"),
         ):
             with self.assertRaises(image_state.StateDurabilityError):
                 controller.run_once()
@@ -1353,9 +1283,7 @@ class FirstbootControllerTests(unittest.TestCase):
 
         def write_then_fail(state: str) -> str:
             real_write_state(state)
-            raise image_state.StateDurabilityError(
-                "injected crash after ready state write"
-            )
+            raise image_state.StateDurabilityError("injected crash after ready state write")
 
         with mock.patch.object(
             controller.store,
@@ -1395,9 +1323,7 @@ class UnitContractTests(unittest.TestCase):
         )
 
     def test_all_controller_terminal_codes_exist_in_state_schema(self) -> None:
-        source = (PROVISION_DIR / "pi_router_image_controller.py").read_text(
-            encoding="utf-8"
-        )
+        source = (PROVISION_DIR / "pi_router_image_controller.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         codes: set[str] = set()
         for node in ast.walk(tree):
@@ -1407,20 +1333,14 @@ class UnitContractTests(unittest.TestCase):
                 continue
             if node.func.id not in {"ControllerFault", "CheckpointFault"}:
                 continue
-            if isinstance(node.args[0], ast.Constant) and isinstance(
-                node.args[0].value, str
-            ):
+            if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
                 codes.add(node.args[0].value)
         self.assertTrue(codes)
         self.assertEqual(codes - image_state.ERROR_CODES, set())
 
     def test_timer_retries_oneshot_without_network_online_dependency(self) -> None:
-        service = (PROVISION_DIR / "pi-router-image-controller.service").read_text(
-            encoding="utf-8"
-        )
-        timer = (PROVISION_DIR / "pi-router-image-controller.timer").read_text(
-            encoding="utf-8"
-        )
+        service = (PROVISION_DIR / "pi-router-image-controller.service").read_text(encoding="utf-8")
+        timer = (PROVISION_DIR / "pi-router-image-controller.timer").read_text(encoding="utf-8")
         self.assertIn("Type=oneshot", service)
         self.assertNotIn("RemainAfterExit", service)
         self.assertNotIn("network-online.target", service)
@@ -1430,8 +1350,7 @@ class UnitContractTests(unittest.TestCase):
             service,
         )
         self.assertIn(
-            "ExecStart=/usr/bin/python3 "
-            "/usr/local/lib/pi-router-image/pi_router_image_controller.py",
+            "ExecStart=/usr/bin/python3 " "/usr/local/lib/pi-router-image/pi_router_image_controller.py",
             service,
         )
         self.assertIn("TimeoutStartSec=40min", service)

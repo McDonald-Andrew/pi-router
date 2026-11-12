@@ -563,7 +563,7 @@ tbody tr:last-child td {
   margin-bottom: 16px;
 }
 
-/* First-boot onboarding form */
+/* Provisioning onboarding form */
 
 .onboarding-form {
   display: grid;

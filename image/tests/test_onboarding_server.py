@@ -553,7 +553,6 @@ class ServiceDefinitionTests(unittest.TestCase):
         self.assertIn('class="brand-icon"', index)
         self.assertIn('id="routerVersion"', index)
         self.assertIn("Onboarding | v0.0.1", index)
-        self.assertNotIn("First boot setup", index)
         self.assertIn('class="message success"', index)
         self.assertGreaterEqual(index.count('role="status"'), 2)
         self.assertIn('id="form-result"', index)

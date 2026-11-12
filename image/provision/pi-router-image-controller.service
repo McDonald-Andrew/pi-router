@@ -1,5 +1,5 @@
 [Unit]
-Description=Pi Router resumable first-boot controller
+Description=Pi Router resumable provisioning controller
 Wants=cloud-init.target systemd-machine-id-commit.service systemd-sysusers.service systemd-tmpfiles-setup.service NetworkManager.service
 After=local-fs.target cloud-init.target systemd-machine-id-commit.service systemd-sysusers.service systemd-tmpfiles-setup.service NetworkManager.service
 
