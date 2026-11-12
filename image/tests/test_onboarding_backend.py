@@ -661,6 +661,11 @@ class TLSContractTests(unittest.TestCase):
         self.assertIn("Type=notify", unit)
         self.assertIn("NotifyAccess=main", unit)
         self.assertIn("Before=pi-router-onboarding-server.service", unit)
+        self.assertIn(
+            "ExecStart=/usr/bin/python3 -B "
+            "/usr/local/lib/pi-router-image/pi_router_onboarding_backend.py",
+            unit,
+        )
         self.assertIn("LimitCORE=0", unit)
         self.assertIn("MemorySwapMax=0", unit)
         self.assertIn("Requires=pi-router-onboarding-backend.service", frontend)
@@ -672,12 +677,8 @@ class TLSContractTests(unittest.TestCase):
         source = (
             PROVISION_DIR / "pi_router_onboarding_backend.py"
         ).read_text(encoding="utf-8")
-        entry = (PROVISION_DIR / "pi-router-onboarding-backend").read_text(
-            encoding="utf-8"
-        )
         self.assertNotIn("bytes(username)", source)
         self.assertNotIn("bytes(password)", source)
-        self.assertIn("exec /usr/bin/python3 -B", entry)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-
-exec /usr/bin/python3 \
-    /usr/local/lib/pi-router-image/pi_router_image_controller.py

@@ -1421,9 +1421,6 @@ class UnitContractTests(unittest.TestCase):
         timer = (PROVISION_DIR / "pi-router-image-controller.timer").read_text(
             encoding="utf-8"
         )
-        executable = (PROVISION_DIR / "pi-router-image-controller").read_text(
-            encoding="utf-8"
-        )
         self.assertIn("Type=oneshot", service)
         self.assertNotIn("RemainAfterExit", service)
         self.assertNotIn("network-online.target", service)
@@ -1432,8 +1429,11 @@ class UnitContractTests(unittest.TestCase):
             "After=local-fs.target cloud-init.target systemd-machine-id-commit.service systemd-sysusers.service systemd-tmpfiles-setup.service NetworkManager.service",
             service,
         )
-        self.assertIn("ExecStart=/usr/local/libexec/pi-router-image-controller", service)
-        self.assertIn("pi_router_image_controller.py", executable)
+        self.assertIn(
+            "ExecStart=/usr/bin/python3 "
+            "/usr/local/lib/pi-router-image/pi_router_image_controller.py",
+            service,
+        )
         self.assertIn("TimeoutStartSec=40min", service)
         self.assertIn("OnUnitInactiveSec=15s", timer)
         self.assertIn("Unit=pi-router-image-controller.service", timer)

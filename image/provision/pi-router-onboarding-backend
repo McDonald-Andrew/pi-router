@@ -1,5 +1,0 @@
-#!/bin/sh
-set -eu
-
-exec /usr/bin/python3 -B \
-    /usr/local/lib/pi-router-image/pi_router_onboarding_backend.py

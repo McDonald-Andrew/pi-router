@@ -137,11 +137,8 @@ class BuildImageContractTests(unittest.TestCase):
         for artifact in (
             "pi-router-image-controller.timer",
             "pi-router-image-controller.service",
-            "pi-router-image-controller",
             "pi-router-onboarding-server.service",
-            "pi-router-onboarding-server",
             "pi-router-onboarding-backend.service",
-            "pi-router-onboarding-backend",
             "pi-router-policy-rc.d",
             "pi-router-sshd.conf",
             "pi-router-ssh-retry.conf",
@@ -154,6 +151,7 @@ class BuildImageContractTests(unittest.TestCase):
         ):
             with self.subTest(artifact=artifact):
                 self.assertIn(artifact, source)
+        self.assertNotIn("/usr/local/libexec", source)
         self.assertIn('"$release_path/web/onboarding-index.html"', source)
         self.assertIn('"$release_path/web/onboarding-app.js"', source)
         self.assertIn('"$release_path/web/onboarding_server.py"', source)

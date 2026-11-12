@@ -377,14 +377,6 @@ assert_copy \
     "0:0:644" \
     "Proton onboarding HTTPS server module"
 
-for executable in pi-router-image-controller pi-router-onboarding-server pi-router-onboarding-backend; do
-    assert_copy \
-        "$asset_dir/$executable" \
-        "$root/usr/local/libexec/$executable" \
-        "0:0:755" \
-        "provisioning executable"
-done
-
 for unit in \
     pi-router-image-controller.service \
     pi-router-image-controller.timer \

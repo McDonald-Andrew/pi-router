@@ -145,16 +145,6 @@ install -D -o root -g root -m 0644 \
     "$release_path/web/onboarding_server.py" \
     "$root/usr/local/lib/pi-router-image/onboarding_server.py"
 
-for executable in \
-    pi-router-image-controller \
-    pi-router-onboarding-server \
-    pi-router-onboarding-backend
-do
-    install -D -o root -g root -m 0755 \
-        "$provision_source/$executable" \
-        "$root/usr/local/libexec/$executable"
-done
-
 for unit in \
     pi-router-image-controller.service \
     pi-router-image-controller.timer \

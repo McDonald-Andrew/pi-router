@@ -508,17 +508,17 @@ class ServiceDefinitionTests(unittest.TestCase):
         service = (PROVISION_DIR / "pi-router-onboarding-server.service").read_text(
             encoding="utf-8"
         )
-        executable = (PROVISION_DIR / "pi-router-onboarding-server").read_text(
-            encoding="utf-8"
-        )
         self.assertEqual(frontend.DEFAULT_PORT, 8080)
         self.assertNotIn("[Install]", service)
         self.assertIn("User=pi-router-onboarding", service)
         self.assertIn("Requires=pi-router-onboarding-backend.service", service)
         self.assertIn("BindsTo=pi-router-onboarding-backend.service", service)
         self.assertIn("After=network.target pi-router-onboarding-backend.service", service)
-        self.assertIn("ExecStart=/usr/local/libexec/pi-router-onboarding-server", service)
-        self.assertIn("onboarding_server.py", executable)
+        self.assertIn(
+            "ExecStart=/usr/bin/python3 -I -B "
+            "/usr/local/lib/pi-router-image/onboarding_server.py",
+            service,
+        )
         self.assertIn("LoadCredential=tls.crt:", service)
         self.assertIn("LoadCredential=tls.key:", service)
         self.assertIn("RestrictAddressFamilies=AF_INET AF_UNIX", service)
