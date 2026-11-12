@@ -234,14 +234,14 @@
       } else {
         showMessage(
           result,
-          "Sign-in could not start. Check the status and try again.",
+          "Sign-in could not start. Check the status above and try again.",
           "error"
         );
       }
     } catch (_error) {
       showMessage(
         result,
-        "The router may be restarting. Check the status before retrying.",
+        "The router may be restarting. Check the status above before retrying.",
         "error"
       );
     } finally {
