@@ -316,17 +316,6 @@ class AssetBundle:
             raise FrontendError() from exc
         if b"__PI_ROUTER_CSRF_TOKEN__" not in index:
             raise FrontendError()
-        if (
-            max(
-                len(index),
-                len(javascript),
-                len(stylesheet),
-                len(favicon_svg),
-                len(favicon_ico),
-            )
-            > 256 * 1024
-        ):
-            raise FrontendError()
         return cls(
             index=index,
             javascript=javascript,

@@ -126,6 +126,22 @@ class ConfigAndAssetTests(unittest.TestCase):
             self.assertIn(token.encode("ascii"), rendered)
             self.assertNotIn(b"__PI_ROUTER_CSRF_TOKEN__", rendered)
 
+    def test_repository_onboarding_assets_fit_the_server_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source_name, target_name in (
+                ("onboarding-index.html", "index.html"),
+                ("onboarding-app.js", "app.js"),
+                ("styles.css", "styles.css"),
+                ("favicon.svg", "favicon.svg"),
+                ("favicon.ico", "favicon.ico"),
+            ):
+                (root / target_name).write_bytes((WEB / source_name).read_bytes())
+
+            assets = frontend.AssetBundle.load(root)
+
+            self.assertEqual(assets.favicon_ico, (WEB / "favicon.ico").read_bytes())
+
 
 class StatusPresentationContractTests(unittest.TestCase):
     def test_frontend_and_durable_status_enums_are_synchronized(self) -> None:
