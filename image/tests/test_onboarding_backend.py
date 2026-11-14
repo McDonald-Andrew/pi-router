@@ -304,6 +304,44 @@ class OnboardingBackendTests(unittest.TestCase):
             runner.commands,
         )
 
+    def test_successful_onboarding_leaves_no_image_owned_credential_residue(
+        self,
+    ) -> None:
+        fixture = BackendFixture(self)
+        fixture.provisioning()
+        username = b"successful-user-canary@example.test"
+        password = b"successful-password-canary"
+
+        def run(received_username: bytearray, received_password: bytearray) -> object:
+            self.assertEqual(received_username, username)
+            self.assertEqual(received_password, password)
+            fixture.write_checkpoint(BOOT_B)
+            fixture.paths.provisioning.unlink()
+            return pseudo_terminal_result(pseudo_terminal.PseudoTerminalStatus.SUCCESS)
+
+        runner = FakeRunner()
+        backend = fixture.backend(run, runner=runner)
+        frame = credential_frame(username, password)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            self.assertEqual(
+                backend.submit_frame(frame), backend_module.RESPONSE_ACCEPTED
+            )
+
+        self.assertEqual(frame, bytearray(len(frame)))
+        self.assertEqual(fixture.store.read_state(), "post-reboot-complete")
+        persisted = bytearray()
+        for path in Path(fixture.temporary.name).rglob("*"):
+            if path.is_file():
+                persisted.extend(path.read_bytes())
+        command_text = "\n".join("\0".join(command) for command in runner.commands)
+        captured_text = stdout.getvalue() + stderr.getvalue() + command_text
+        for canary in (username, password):
+            self.assertNotIn(canary, persisted)
+            self.assertNotIn(canary.decode("ascii"), captured_text)
+
     def test_checkpoint_commit_reconciles_pseudo_terminal_failure(self) -> None:
         fixture = BackendFixture(self)
 

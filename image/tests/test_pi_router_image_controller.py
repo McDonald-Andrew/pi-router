@@ -635,6 +635,29 @@ class ProvisioningControllerTests(unittest.TestCase):
         firewall = ("/usr/sbin/nft", "list", "table", "inet", "router_filter")
         self.assertLess(runner.commands.index(firewall), runner.commands.index(restart))
 
+    def test_imager_disabled_ssh_remains_stopped(self) -> None:
+        fixture = ControllerFixture(self)
+
+        for disabled_state in ("disabled", "masked", "not-found"):
+            with self.subTest(state=disabled_state):
+                def callback(
+                    command: tuple[str, ...], state: str = disabled_state
+                ) -> controller_module.CommandResult:
+                    if command == (
+                        "/usr/bin/systemctl",
+                        "is-enabled",
+                        "ssh.service",
+                    ):
+                        return result(1, f"{state}\n")
+                    return default_result(command)
+
+                runner = FakeRunner(callback)
+                fixture.controller(runner)._activate_imager_ssh()
+                self.assertNotIn(
+                    ("/usr/bin/systemctl", "restart", "ssh.service"),
+                    runner.commands,
+                )
+
     def test_changed_package_service_guard_fails_closed(self) -> None:
         fixture = ControllerFixture(self)
         fixture.paths.package_service_guard.write_text("#!/bin/sh\nexit 0\n", encoding="ascii")
