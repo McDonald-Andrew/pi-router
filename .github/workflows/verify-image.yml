@@ -5,7 +5,6 @@ on:
   pull_request:
     paths:
       - "image/**"
-      - "src/docs/image-installation-plan.md"
       - "src/**"
       - "windows-installer/**"
       - ".github/workflows/release.yml"
@@ -15,7 +14,6 @@ on:
       - main
     paths:
       - "image/**"
-      - "src/docs/image-installation-plan.md"
       - "src/**"
       - "windows-installer/**"
       - ".github/workflows/release.yml"
