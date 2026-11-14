@@ -48,10 +48,10 @@ root="$(realpath -e "$1")"
 
 case "$PI_ROUTER_IMAGE_PROFILE" in
     development)
-        certification_status=development
+        image_profile=development
         ;;
     release)
-        certification_status=release
+        image_profile=release
         ;;
     *)
         die "unsupported image profile: $PI_ROUTER_IMAGE_PROFILE"
@@ -223,7 +223,7 @@ manifest_dir="$root/usr/share/pi-router/image-build"
 install -d -o root -g root -m 0755 "$manifest_dir"
 setup_sha256="$(sha256sum "$release_path/setup" | awk '{print $1}')"
 {
-    printf 'certification_status=%s\n' "$certification_status"
+    printf 'image_profile=%s\n' "$image_profile"
     printf 'router_version=%s\n' "$version"
     printf 'router_release_sha256=%s\n' "$PI_ROUTER_RELEASE_SHA256"
     printf 'release_name=%s\n' "$release_name"

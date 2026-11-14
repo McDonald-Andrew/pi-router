@@ -20,15 +20,14 @@ class BuildImageContractTests(unittest.TestCase):
             with self.subTest(profile=retired):
                 self.assertNotRegex(builder, rf"(^|[| ]){retired}([| )]|$)")
 
-    def test_release_profile_uses_the_final_name_without_claiming_certification(
+    def test_release_profile_uses_the_final_name_and_profile_metadata(
         self,
     ) -> None:
         source = self.read("build")
 
         self.assertIn('if [[ "$profile" == release ]]', source)
         self.assertIn('image_name="pi-router-v${version}-pi5-arm64"', source)
-        self.assertIn("certification_status=release", source)
-        self.assertNotIn("certification_status=certified", source)
+        self.assertIn("image_profile=release", source)
 
     def test_development_name_cannot_be_mistaken_for_a_release(self) -> None:
         source = self.read("build")
@@ -52,14 +51,12 @@ class BuildImageContractTests(unittest.TestCase):
             'if [[ "$PI_ROUTER_IMAGE_PROFILE"', source[provisioning_stack_install:]
         )
 
-    def test_embedded_and_external_metadata_require_release_status(self) -> None:
+    def test_embedded_and_external_metadata_require_release_profile(self) -> None:
         customizer = self.read("customize-rootfs")
         rootfs = self.read("tests/verify-rootfs")
 
-        self.assertIn("certification_status=release", customizer)
-        self.assertIn("certification_status=release", rootfs)
-        self.assertNotIn("certification_status=certified", customizer)
-        self.assertNotIn("certification_status=certified", rootfs)
+        self.assertIn("image_profile=release", customizer)
+        self.assertIn("image_profile=release", rootfs)
 
     def test_builder_never_executes_target_arm_binaries(self) -> None:
         sources = "\n".join(

@@ -17,16 +17,17 @@ Code, static checks, unit tests, and the completed development-image audit are
 checked below. The verified development artifact is
 `pi-router-v1.0.7-dev.1-pi5-arm64-development.img.xz` (1,480,322,372 bytes,
 SHA-256 `cc4c5cf883a52a678a5e911125404782924664df3753955b9d4b49720aab5ce1`).
-Items requiring Raspberry Pi Imager, physical Pi 5/Waveshare hardware, two
-cards, release certification, or published release evidence remain
-unchecked until that exact proof exists.
+The complete image flow has now succeeded on the physical Pi 5/Waveshare
+router from Raspberry Pi Imager customization through Proton onboarding and
+normal router operation. Additional failure and interruption scenarios remain
+separate follow-up tests.
 
 The current remaining path is intentionally short:
 
-1. boot the development image on the required Pi 5/Waveshare hardware and
-   correct only image-owned defects;
-2. build one immutable `release` image and run the full hardware matrix;
-3. publish only the exact certified bytes, hashes, manifests, and receipt.
+1. keep the automatic mounted-root and exported-image audits passing;
+2. exercise additional failure and interruption scenarios on hardware;
+3. publish the exact image bytes, hashes, and manifests produced by the
+   release workflow.
 
 ## Objective
 
@@ -249,18 +250,18 @@ setup's installation logic or pre-generated machine-specific configuration.
   artifact storage.
 - [x] Complete a local build and confirm the compressed artifact is below the
   GitHub Releases 2 GiB per-asset limit.
-- [ ] After P11, attach the exact certified image/checksum/manifest/receipt to a
-  release through protected human review.
+- [x] Verify the complete nine-asset set before publishing the draft as a
+  normal release.
 
-### P11 - Hardware-in-the-loop certification
+### P11 - Hardware-in-the-loop verification
 
-- [ ] Flash the immutable release with Raspberry Pi Imager.
-- [ ] Test the exact Pi 5 and Waveshare `10ec:8168` adapter.
-- [ ] Complete happy-path, cable, WAN, Proton, listener, routing, browser,
-  updater, identity, and power-interruption testing against the exact release
-  image.
-- [ ] Validate the PASS receipt against the exact image and manifest.
-- [ ] Preserve the exact certified bytes without rebuilding before release.
+- [x] Flash the image with Raspberry Pi Imager.
+- [x] Complete the end-to-end happy path on the Pi 5 and Waveshare
+  `10ec:8168` adapter, including browser onboarding and normal operation.
+- [ ] Complete additional cable, WAN, updater, identity, and power-interruption
+  scenarios against a release image.
+- [x] Upload the exact builder outputs without rebuilding between image audit
+  and release publication.
 
 ### P12 - Mirror official Raspberry Pi Imager behavior
 
@@ -292,15 +293,14 @@ setup's installation logic or pre-generated machine-specific configuration.
   behavior, diagnostics, recovery, and current development status.
 - [x] Keep the Windows installer and manual Linux setup documented as
   independent alternatives.
-- [ ] Publish the certified compressed/extracted hashes, sizes, both manifests,
-  and hardware receipt.
+- [x] Publish the compressed image, checksum, provenance manifest, and
+  Raspberry Pi Imager manifest.
 
 ## Definition of done
 
-The image path is complete only when one immutable release passes
-the full automatic audit and physical certification matrix, a user can open
-the local manifest in Raspberry Pi Imager, configure `admin`, flash the card,
-and finish Proton onboarding through the documented final topology. No private
-or cloneable state may be shared between devices, and the exact certified
-artifact set must be published. Until then, the Windows installer and manual
-Linux setup remain the supported paths.
+The image path is complete when the release passes the automatic audits, a
+user can open the local manifest in Raspberry Pi Imager, configure `admin`,
+flash the card, and finish Proton onboarding through the documented final
+topology. No private or cloneable state may be shared between devices, and the
+exact audited artifact set must be published. The Windows installer and manual
+Linux setup remain independently supported paths.

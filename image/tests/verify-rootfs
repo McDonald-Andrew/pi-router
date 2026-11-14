@@ -86,10 +86,10 @@ done
 
 case "$profile" in
     development)
-        expected_certification_status=development
+        expected_image_profile=development
         ;;
     release)
-        expected_certification_status=release
+        expected_image_profile=release
         ;;
     *)
         fail "invalid profile: $profile"
@@ -181,7 +181,7 @@ done
     fail "firmware config contains the forbidden PCIe Gen3 setting"
 
 assert_file "$metadata" "0:0:644" "image build metadata"
-assert_metadata certification_status "$expected_certification_status"
+assert_metadata image_profile "$expected_image_profile"
 assert_metadata router_version "$version"
 assert_metadata router_release_sha256 "$release_sha"
 assert_metadata release_name "$release_dir"

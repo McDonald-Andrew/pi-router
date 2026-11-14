@@ -242,11 +242,11 @@ BASE_IMAGE_FILENAME="${BASE_IMAGE_URL##*/}"
 
 if [[ "$profile" == release ]]; then
     image_name="pi-router-v${version}-pi5-arm64"
-    certification_status=release
+    image_profile=release
     result_label=Release
 else
     image_name="pi-router-v${version}-pi5-arm64-development"
-    certification_status=development
+    image_profile=development
     result_label=Development
 fi
 artifact="$output_dir/$image_name.img.xz"
@@ -412,7 +412,7 @@ manifest_stage="$publication_root/$(basename -- "$manifest")"
 imager_manifest_stage="$publication_root/$(basename -- "$imager_manifest")"
 printf '%s  %s\n' "$compressed_sha" "$(basename -- "$artifact")" > "$sha_stage"
 {
-    printf 'certification_status=%s\n' "$certification_status"
+    printf 'image_profile=%s\n' "$image_profile"
     printf 'image_name=%s\n' "$image_name"
     printf 'router_version=%s\n' "$version"
     printf 'router_source_commit=%s\n' "$source_commit"

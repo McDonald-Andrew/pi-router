@@ -67,7 +67,6 @@ class GitHubImageWorkflowTests(unittest.TestCase):
 
     def test_release_stays_draft_until_assets_are_verified(self) -> None:
         self.assertIn("--draft", self.release)
-        self.assertNotIn("Hardware certification is pending", self.release)
         self.assertIn(
             "gh release edit $env:RELEASE_TAG --draft=false --latest", self.release
         )

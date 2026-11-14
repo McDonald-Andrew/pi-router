@@ -140,7 +140,7 @@ Cable and upstream-network waits intentionally resume when connectivity is resto
 ## Local diagnostics
 
 SSH is disabled and the exported image deliberately locks `admin`. The local
-commands below are available only if the certified graphical autologin/session
+commands below are available only if the configured graphical autologin/session
 provides a usable terminal, or when using a controlled development/debug image:
 
 ```bash
