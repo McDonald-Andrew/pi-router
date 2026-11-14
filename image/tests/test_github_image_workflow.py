@@ -65,12 +65,12 @@ class GitHubImageWorkflowTests(unittest.TestCase):
         self.assertNotIn('$OUTPUT_DIR/*', self.release)
         self.assertNotIn("--clobber", self.release)
 
-    def test_release_stays_a_prerelease_until_hardware_certification(self) -> None:
+    def test_release_stays_draft_until_assets_are_verified(self) -> None:
         self.assertIn("--draft", self.release)
-        self.assertIn("--prerelease", self.release)
-        self.assertIn("Hardware certification is pending", self.release)
-        self.assertIn("gh release edit $env:RELEASE_TAG --draft=false", self.release)
-        self.assertIn("-not $published.isPrerelease", self.release)
+        self.assertNotIn("Hardware certification is pending", self.release)
+        self.assertIn(
+            "gh release edit $env:RELEASE_TAG --draft=false --latest", self.release
+        )
         self.assertIn("cleanup_failed_draft:", self.release)
         self.assertIn('gh release delete "$RELEASE_TAG" --yes', self.release)
         self.assertIn("git/matching-refs/tags/$RELEASE_TAG", self.release)
@@ -101,8 +101,8 @@ class GitHubImageWorkflowTests(unittest.TestCase):
 
         self.assertIn("Pack router source and build Windows installer", windows)
         self.assertIn("Upload existing release assets", windows)
-        self.assertNotIn("Verify and publish prerelease", windows)
-        self.assertIn("Verify and publish prerelease", publish)
+        self.assertNotIn("Verify and publish release", windows)
+        self.assertIn("Verify and publish release", publish)
         self.assertNotIn("Pack router source and build Windows installer", publish)
         self.assertIn("      - image\n      - windows", publish)
         self.assertIn("GH_REPO: ${{ github.repository }}", publish)

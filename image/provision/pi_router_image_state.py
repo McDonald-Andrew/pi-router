@@ -191,7 +191,7 @@ def validate_sha256(value: str) -> str:
 def validate_release_name(value: str) -> str:
     value = _require_string(value, "release name")
     if _RELEASE_NAME_RE.fullmatch(value) is None:
-        raise StateFormatError("release name must be pi-router-vX.Y.Z[-prerelease]")
+        raise StateFormatError("release name must be pi-router-vX.Y.Z[-suffix]")
     return value
 
 

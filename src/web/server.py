@@ -91,38 +91,38 @@ def parse_version(
         for index in range(1, 4)
     )
 
-    prerelease = (
+    suffix = (
         tuple(match.group(4).split("."))
         if match.group(4)
         else None
     )
 
-    return core, prerelease
+    return core, suffix
 
 
 def version_is_newer(
     candidate: str,
     current: str,
 ) -> bool:
-    candidate_core, candidate_pre = (
+    candidate_core, candidate_suffix = (
         parse_version(candidate)
     )
-    current_core, current_pre = (
+    current_core, current_suffix = (
         parse_version(current)
     )
 
     if candidate_core != current_core:
         return candidate_core > current_core
 
-    if candidate_pre is None:
-        return current_pre is not None
+    if candidate_suffix is None:
+        return current_suffix is not None
 
-    if current_pre is None:
+    if current_suffix is None:
         return False
 
     for candidate_part, current_part in zip(
-        candidate_pre,
-        current_pre,
+        candidate_suffix,
+        current_suffix,
     ):
         if candidate_part == current_part:
             continue
@@ -142,7 +142,7 @@ def version_is_newer(
 
         return candidate_part > current_part
 
-    return len(candidate_pre) > len(current_pre)
+    return len(candidate_suffix) > len(current_suffix)
 
 
 def update_repository() -> str:

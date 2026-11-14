@@ -193,7 +193,7 @@ def validate_release_set(
     """Validate and return hashes for the exact publishable release set."""
 
     if VERSION_RE.fullmatch(version) is None:
-        _fail("version must match X.Y.Z or X.Y.Z-prerelease")
+        _fail("version must match X.Y.Z or X.Y.Z-suffix")
     if COMMIT_RE.fullmatch(expected_source_commit) is None:
         _fail("expected source commit must be one full lowercase Git commit")
 

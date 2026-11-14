@@ -245,7 +245,7 @@ setup's installation logic or pre-generated machine-specific configuration.
   changing the existing Windows installer build outputs.
 - [x] Emit the matching `.rpi-imager-manifest` described in P12.
 - [x] Build the immutable release in the release workflow and upload its four
-  image outputs directly to a draft prerelease, without using large Actions
+  image outputs directly to a draft release, without using large Actions
   artifact storage.
 - [x] Complete a local build and confirm the compressed artifact is below the
   GitHub Releases 2 GiB per-asset limit.
