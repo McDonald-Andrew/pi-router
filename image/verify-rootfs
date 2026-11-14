@@ -105,7 +105,7 @@ esac
 [[ "$base_sha" =~ ^[0-9a-f]{64}$ ]] || fail "invalid base image SHA-256"
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-asset_dir="$script_dir/../provision"
+asset_dir="$script_dir/provision"
 release_dir="pi-router-v$version"
 release_path="$root/opt/pi-router/releases/$release_dir"
 repository_metadata="$release_path/config/proton-repository.conf"
