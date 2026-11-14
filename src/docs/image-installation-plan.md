@@ -215,8 +215,10 @@ setup's installation logic or pre-generated machine-specific configuration.
 
 ### P9 - Automated verification
 
-- [x] Unit-test state transitions, command failure, timeout, interruption,
-  reboot reconciliation, pseudo-terminal prompt splitting, redaction, request security, and fail-closed behavior.
+- [x] Exercise state transitions, command failure, timeout, interruption,
+  reboot reconciliation, pseudo-terminal prompt splitting, redaction, request
+  security, and fail-closed behavior during implementation; retire the
+  historical Python test suite after successful hardware validation.
 - [x] Statically inspect the target dpkg database and systemd enablement
   without chroot or target execution.
 - [x] Make the builder mount and audit the customized root before compression
