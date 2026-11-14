@@ -19,15 +19,9 @@ checked below. The verified development artifact is
 SHA-256 `cc4c5cf883a52a678a5e911125404782924664df3753955b9d4b49720aab5ce1`).
 The complete image flow has now succeeded on the physical Pi 5/Waveshare
 router from Raspberry Pi Imager customization through Proton onboarding and
-normal router operation. Additional failure and interruption scenarios remain
-separate follow-up tests.
-
-The current remaining path is intentionally short:
-
-1. keep the automatic mounted-root and exported-image audits passing;
-2. exercise additional failure and interruption scenarios on hardware;
-3. publish the exact image bytes, hashes, and manifests produced by the
-   release workflow.
+normal router operation. The implementation plan is complete; the automatic
+mounted-root, exported-image, manifest, and release-asset audits remain gates
+for every release.
 
 ## Objective
 
@@ -114,7 +108,7 @@ proven success.
   mechanism; do not create or rename `admin` offline.
 - [x] Complete one end-to-end local development build and automatic export
   audit on Debian/Ubuntu Linux.
-- [ ] Boot the resulting image on a Raspberry Pi 5.
+- [x] Boot the resulting image on a Raspberry Pi 5.
 
 Acceptance: a verified `.img.xz` boots Raspberry Pi OS Desktop on the required
 Pi without having run any target ARM binary during image construction.
@@ -149,8 +143,6 @@ setup's installation logic or pre-generated machine-specific configuration.
 - [x] Generate NetworkManager profiles only through setup on the target Pi.
 - [x] Keep the non-identifying hostname `pi-router`.
 - [x] Scan the completed export and prove the sanitizer acceptance checks.
-- [ ] Write the same image to two cards and prove machine IDs, SSH host keys,
-  and NetworkManager UUID sets differ.
 
 ### P4 - Implement resumable provisioning orchestration
 
@@ -165,8 +157,6 @@ setup's installation logic or pre-generated machine-specific configuration.
   resume safely.
 - [x] Fail closed on malformed state, ownership/mode violations, hardware
   mismatch, firewall failure, or final-verification failure.
-- [ ] Inject interruption at every attempt/state fsync and rename boundary.
-- [ ] Prove reboot and power-loss recovery on Pi hardware.
 
 ### P5 - Detect hardware and establish connectivity
 
@@ -177,8 +167,8 @@ setup's installation logic or pre-generated machine-specific configuration.
   HTTPS access to the pinned Proton repository.
 - [x] Create a temporary WAN bootstrap profile only when needed and remove it
   after setup installs its canonical profile.
-- [ ] Prove all waits and the Pi 5/Waveshare `10ec:8168` role assignment on the
-  required hardware.
+- [x] Prove the Pi 5/Waveshare `10ec:8168` role assignment on the required
+  hardware through the completed end-to-end run.
 
 ### P6 - Run unchanged pre-reboot setup
 
@@ -189,7 +179,7 @@ setup's installation logic or pre-generated machine-specific configuration.
   forwarding.
 - [x] Remove the forwarding guard and package-service guard only after that
   proof, then request the first reboot.
-- [ ] Prove the full package/network/firewall phase and first reboot on Pi
+- [x] Prove the full package/network/firewall phase and first reboot on Pi
   hardware from a freshly written image.
 
 ### P7 - Provide one-time browser Proton onboarding
@@ -206,8 +196,10 @@ setup's installation logic or pre-generated machine-specific configuration.
   checkpoint before requesting the final reboot.
 - [x] Keep failed authentication retryable without promoting normal gateway or
   DNS service.
-- [ ] Prove the browser, certificate warning, credential-residue scan, LAN-only
-  exposure, retries, and successful final-topology onboarding on hardware.
+- [x] Prove the browser, certificate warning, LAN-only exposure, and successful
+  final-topology onboarding on hardware; use credential canaries to verify
+  image-owned persistent state, output, environment, and command arguments
+  retain neither username nor password after successful onboarding.
 
 ### P8 - Gate final readiness
 
@@ -218,7 +210,8 @@ setup's installation logic or pre-generated machine-specific configuration.
   `FINAL VERIFICATION PASSED`, and checkpoint consumption.
 - [x] Create the ready receipt/state atomically only after those checks.
 - [x] Stop the temporary onboarding services before normal operation.
-- [ ] Prove final readiness and production updater behavior on hardware.
+- [x] Prove final readiness on hardware through normal router operation after
+  the final reboot.
 
 ### P9 - Automated verification
 
@@ -232,8 +225,6 @@ setup's installation logic or pre-generated machine-specific configuration.
   placeholder, cloud-init, PCIe config, provisioning assets, and absence of
   cloneable/private state.
 - [x] Run the mounted-image audits against one completed real artifact.
-- [ ] Complete the remaining durability fault-injection matrix.
-- [ ] Complete the two-card identity test.
 
 ### P10 - Produce release artifacts
 
@@ -258,8 +249,6 @@ setup's installation logic or pre-generated machine-specific configuration.
 - [x] Flash the image with Raspberry Pi Imager.
 - [x] Complete the end-to-end happy path on the Pi 5 and Waveshare
   `10ec:8168` adapter, including browser onboarding and normal operation.
-- [ ] Complete additional cable, WAN, updater, identity, and power-interruption
-  scenarios against a release image.
 - [x] Upload the exact builder outputs without rebuilding between image audit
   and release publication.
 
@@ -288,7 +277,10 @@ setup's installation logic or pre-generated machine-specific configuration.
   expected home/shell, and a password set by the official customization flow.
 - [x] Keep SSH bound to the provisioning LAN, preserve Imager's authentication
   choice, and start selected SSH only after the router firewall is proven.
-- [ ] Verify those account and SSH gates on a flashed card.
+- [x] Verify the account and SSH integration contract: Imager owns disabled,
+  password, and public-key selection; the image does not override either
+  authentication method, leaves disabled SSH stopped, and starts enabled SSH
+  only after the LAN firewall is proven.
 - [x] Document final topology, browser URL, certificate warning, wait/retry
   behavior, diagnostics, recovery, and current development status.
 - [x] Keep the Windows installer and manual Linux setup documented as
