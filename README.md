@@ -33,7 +33,7 @@ Ensure an ethernet cable is connected from your machine to the Pi 5's built-in e
 
 - To build a Windows installer, follow [windows-installer/BUILD.md](windows-installer/BUILD.md).
   - The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, retry the installation. If this still does not work, **re-image the Pi 5 with a fresh Raspberry Pi OS Desktop image** and start again.
-- Otherwise, or if using Linux, you may run the setup script steps manually and follow `src/docs/setup.md`.
+- Otherwise, or if using Linux, you may run the setup script steps manually and follow the [manual setup guide](src/setup.md).
   - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
 # Final Setup

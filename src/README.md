@@ -295,11 +295,7 @@ wait for unattended Proton
 final-verify
 ```
 
-For the full manual Linux procedure, see:
-
-```text
-docs/setup.md
-```
+For the full manual Linux procedure, see `setup.md`
 
 A successful installation must ultimately reach:
 
@@ -390,6 +386,7 @@ WAN DHCP retries continue independently.
 src/
 ├── README.md
 ├── setup
+├── setup.md
 ├── requirements-apt.txt
 ├── requirements-optional.txt
 ├── config/
@@ -410,8 +407,6 @@ src/
 │   ├── protonvpn-autoconnect.service
 │   ├── protonvpn-healthcheck.service
 │   └── protonvpn-healthcheck.timer
-├── docs/
-│   └── setup.md
 ├── lib/
 │   └── ip-block/
 │       ├── normalize.py
