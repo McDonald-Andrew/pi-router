@@ -344,7 +344,7 @@ sudo env -i \
     HOME=/root \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     LC_ALL=C.UTF-8 \
-    bash "$image_source/tests/verify-rootfs" \
+    bash "$image_source/verify-rootfs" \
     "$mount_root" \
     "$profile" \
     "$version" \
@@ -388,7 +388,7 @@ sudo env -i \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     LC_ALL=C.UTF-8 \
     PI_ROUTER_AUDIT_TMPDIR="$temporary_root/audit" \
-    bash "$image_source/tests/verify-image" \
+    bash "$image_source/verify-image" \
     "$artifact_stage" \
     "$profile" \
     "$version" \
