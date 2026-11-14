@@ -60,7 +60,7 @@ jobs:
 
           gh release create "$release_tag" \
             --target "$GITHUB_SHA" \
-            --title "Pi Router $VERSION release" \
+            --title "$release_tag" \
             --generate-notes \
             --draft
           printf 'release_tag=%s\n' "$release_tag" >> "$GITHUB_OUTPUT"
