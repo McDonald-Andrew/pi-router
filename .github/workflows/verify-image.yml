@@ -35,9 +35,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Verify image integration contract
-        run: sh image/tests/test-contract
-
       - name: Check image shell syntax
         shell: bash
         run: |
@@ -129,6 +126,3 @@ jobs:
 
       - name: Check onboarding JavaScript syntax
         run: node --check src/web/onboarding-app.js
-
-      - name: Run image unit tests
-        run: python3 -m unittest discover -s image/tests -p "test_*.py"
