@@ -20,14 +20,17 @@
 - micro SD card
 - 2x ethernet cables
 
-After putting the Pi5 router together, install the latest Raspberry Pi OS Desktop (x64) onto the micro SD card and insert.
+After assembling the Pi 5 router, choose one of the installation methods below. The Pi Router image already contains Raspberry Pi OS Desktop, so do not flash the stock OS before using that method. The Windows installer and manual setup methods instead begin with a fresh stock Raspberry Pi OS Desktop installation.
 
-Ensure an ethernet cable is connected from your machine to the Pi 5's built-in ethernet port (`eth0`). The other ethernet cable is connected from one of your current router's LAN ports to the Waveshare PCIe device's ethernet port (`eth1`).
+For the Windows installer or manual setup, connect the setup computer to the Pi 5's built-in Ethernet port (`eth0`) and connect an upstream router LAN port to the Waveshare PCIe Ethernet port (`eth1`). Image users should instead connect the final topology described below before the first boot.
 
 # Installing `pi-router`
 
-- Raspberry Pi images are built by the manually dispatched **Pi Router Release** GitHub Actions workflow. Follow [the image user guide](image/USER-GUIDE.md) to write and test one with Raspberry Pi Imager.
-- If using Windows, it is recommended to use the Windows installer packaged in with the latest release.
+- For the Pi Router image, install Raspberry Pi Imager 2.x and download the `pi-router-vX.Y.Z-pi5-arm64.rpi-imager-manifest` from the GitHub Release assets.
+  - Open the manifest with Raspberry Pi Imager. It supplies the Pi Router OS entry and automatically downloads the matching `.img.xz` from the same release.
+  - Do not select the raw `.img.xz` through **Use Custom**. During Imager customization, set the username to exactly `admin`, choose a unique password, and configure SSH as desired.
+  - Follow the complete [image user guide](image/USER-GUIDE.md) for writing the microSD card, connecting the final topology, and completing Proton onboarding.
+- As an alternative on Windows, use the Windows installer packaged with the latest release.
 - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
 - To build `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `pi-router-vX.Y.Z.tar.gz`](#pack--repack-pi-router-vxyz-targz) below.
 
@@ -36,23 +39,16 @@ Ensure an ethernet cable is connected from your machine to the Pi 5's built-in e
 - Otherwise, or if using Linux, you may run the setup script steps manually and follow the [manual setup guide](src/setup.md).
   - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
-# Final Setup
+# Final Topology
 
-Once installation is complete you may follow the final steps for setup:
+Image users must connect this topology before the first boot. Windows-installer and manual-setup users move the Pi into this topology after installation:
 
-1. disconnect the ethernet cables and place the Pi in this orientation
-2. Switch your internet router to Access Point/AP mode.
-3. The **final** topology is as follows:
+- ISP modem or upstream router -> Pi Waveshare PCIe `eth1`
+- Pi built-in `eth0` -> downstream router in Access Point/AP mode
 
-- AP LAN port -> Pi built-in eth0
-- ISP modem WAN port -> Pi Waveshare PCIe eth1
+Power off the Pi and downstream access point before changing the connections. If connected directly to an ISP modem, leave the modem unplugged for 1-2 minutes before reconnecting it. Start the modem or upstream router first, then the downstream access point, and finally the Pi.
 
-4. You may turn off/unplug the router, Pi, and modem
-5. Let the modem sit for 1-2mins before plugging back in and connecting to the Pi. This allows the modem and Pi to recognize one another.
-
-6. Turn on the Pi and router.
-
-Congratulations! Your Pi Router is finished!
+Image users should continue with the browser-based provisioning and Proton onboarding steps in the [image user guide](image/USER-GUIDE.md).
 
 # Pack / Repack `pi-router-vX.Y.Z.tar.gz`
 
