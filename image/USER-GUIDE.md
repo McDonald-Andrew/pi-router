@@ -119,12 +119,7 @@ Keep the downstream network physically controlled during onboarding. The tempora
 8. Wait until the page reports **Ready for Proton sign-in**.
 9. Enter the Proton username and password. Both fields display the same fixed mask once non-empty, so the visible mask does not reveal either value's length. Do not let the browser save the password for the router address.
 10. Leave both Ethernet cables connected and do not remove power while the Pi verifies Proton and performs its final reboot.
-
-The page reports hardware, cable, WAN, setup, and sanitized error status. A failed Proton authentication attempt remains in provisioning mode and permits another attempt. It does not promote normal LAN gateway or DNS service.
-
-After successful sign-in the Pi reboots, waits for its production services and Proton tunnel, and runs the canonical final verification. Normal operation is authorized only after `FINAL VERIFICATION PASSED` and the image-owned ready receipt are present.
-
-After Proton verification succeeds, keep the onboarding page open. It allows five minutes for the final reboot and production startup, then automatically replaces the temporary HTTPS onboarding page with the production interface at `http://192.168.50.1:8080/`. No link or click is required. If the automatic destination is still unavailable after ten minutes, treat setup as failed rather than continuing to wait.
+11. After full completion, the ISP modem may need to be reset manually to lease a new DHCP address.
 
 ## Waiting and retry behavior
 
