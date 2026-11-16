@@ -119,7 +119,7 @@ Keep the downstream network physically controlled during onboarding. The tempora
 8. Wait until the page reports **Ready for Proton sign-in**.
 9. Enter the Proton username and password. Both fields display the same fixed mask once non-empty, so the visible mask does not reveal either value's length. Do not let the browser save the password for the router address.
 10. Leave both Ethernet cables connected and do not remove power while the Pi verifies Proton and performs its final reboot.
-11. After full completion, the ISP modem may need to be reset manually to lease a new DHCP address.
+11. After full completion, the ethernet cable from the laptop may need to be disconnected and reconnected manually.
 
 ## Waiting and retry behavior
 
