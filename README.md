@@ -24,18 +24,26 @@ After assembling the Pi 5 router, choose one of the installation methods below. 
 
 For the Windows installer or manual setup, connect the setup computer to the Pi 5's built-in Ethernet port (`eth0`) and connect an upstream router LAN port to the Waveshare PCIe Ethernet port (`eth1`). Image users should instead connect the final topology described below before the first boot.
 
-# Installing `pi-router`
+# Installation Methods
+
+## Image Method
 
 - For the Pi Router image, install Raspberry Pi Imager 2.x and download the `pi-router-vX.Y.Z-pi5-arm64.rpi-imager-manifest` from the GitHub Release assets.
   - Open the manifest with Raspberry Pi Imager. It supplies the Pi Router OS entry and automatically downloads the matching `.img.xz` from the same release.
   - Do not select the raw `.img.xz` through **Use Custom**. During Imager customization, set the username to exactly `admin`, choose a unique password, and configure SSH as desired.
   - Follow the complete [image user guide](image/USER-GUIDE.md) for writing the microSD card, connecting the final topology, and completing Proton onboarding.
+
+## Windows Installer Method
+
 - As an alternative on Windows, use the Windows installer packaged with the latest release.
 - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is needed in the same folder as the `*.exe` Windows installer to run it.
 - To build `*.tar.gz` and `*.sha256.txt` files, see [Pack / Repack `pi-router-vX.Y.Z.tar.gz`](#pack--repack-pi-router-vxyz-targz) below.
 
 - To build a Windows installer, follow [windows-installer/BUILD.md](windows-installer/BUILD.md).
   - The installer **_may fail_** on various steps due to either ethernet or ssh disconnects. If this happens, retry the installation. If this still does not work, **re-image the Pi 5 with a fresh Raspberry Pi OS Desktop image** and start again.
+
+## Manual Method
+
 - Otherwise, or if using Linux, you may run the setup script steps manually and follow the [manual setup guide](src/setup.md).
   - A built or downloaded release `*.tar.gz` and `*.sha256.txt` is still needed for the manual setup.
 
