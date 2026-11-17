@@ -197,15 +197,44 @@ archive="$temporary_root/$release_name.tar.gz"
 image_source="$temporary_root/image-source"
 mkdir -p -- "$image_source"
 
-git -C "$repository_root" archive \
+# These subtree archives do not inherit the repository-root .gitattributes.
+# Force LF so a Windows-configured Git cannot export executable scripts as CRLF.
+git -c core.autocrlf=false -c core.eol=lf \
+    -C "$repository_root" archive \
     --format=tar.gz \
     --prefix="$release_name/" \
     --output="$archive" \
     "$source_commit:src"
 release_sha256="$(sha256sum "$archive" | awk '{print $1}')"
 
-git -C "$repository_root" archive --format=tar "$source_commit:image" |
+git -c core.autocrlf=false -c core.eol=lf \
+    -C "$repository_root" archive --format=tar "$source_commit:image" |
     tar -xf - -C "$image_source"
+
+python3 - "$archive" "$image_source" <<'PY'
+import sys
+import tarfile
+from pathlib import Path
+
+
+def reject_carriage_returns(name: str, data: bytes) -> None:
+    if data.startswith(b"#!") and b"\r" in data:
+        raise SystemExit(f"release executable contains CRLF line endings: {name}")
+
+
+with tarfile.open(sys.argv[1], "r:gz") as bundle:
+    for member in bundle.getmembers():
+        if not member.isfile():
+            continue
+        stream = bundle.extractfile(member)
+        if stream is not None:
+            reject_carriage_returns(member.name, stream.read())
+
+image_source = Path(sys.argv[2])
+for path in image_source.rglob("*"):
+    if path.is_file():
+        reject_carriage_returns(str(path), path.read_bytes())
+PY
 
 base_lock="$image_source/base-image.env"
 [[ -f "$base_lock" && ! -L "$base_lock" ]] ||

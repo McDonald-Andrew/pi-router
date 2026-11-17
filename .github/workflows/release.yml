@@ -166,7 +166,9 @@ jobs:
           $sidecar = Join-Path $tmpDir "$releaseName.sha256.txt"
           New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 
-          & git archive `
+          # HEAD:src does not inherit the repository-root .gitattributes.
+          # Force LF so Windows Git cannot put CRLF executable scripts in the release.
+          & git -c core.autocrlf=false -c core.eol=lf archive `
               --format=tar.gz `
               "--prefix=$releaseName/" `
               "--output=$archive" `
@@ -174,6 +176,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
               throw "git archive exited with code $LASTEXITCODE"
           }
+
+          $archiveCheck = Join-Path $tmpDir 'archive-check'
+          New-Item -ItemType Directory -Path $archiveCheck -Force | Out-Null
+          & tar -xzf $archive -C $archiveCheck
+          if ($LASTEXITCODE -ne 0) {
+              throw "extracting the source archive for validation exited with code $LASTEXITCODE"
+          }
+
+          Get-ChildItem -LiteralPath (Join-Path $archiveCheck $releaseName) -Recurse -File |
+              ForEach-Object {
+                  $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+                  if (
+                      $bytes.Length -ge 2 -and
+                      $bytes[0] -eq [byte][char]'#' -and
+                      $bytes[1] -eq [byte][char]'!' -and
+                      [Array]::IndexOf($bytes, [byte]13) -ge 0
+                  ) {
+                      throw "release executable contains CRLF line endings: $($_.FullName)"
+                  }
+              }
+          Remove-Item -LiteralPath $archiveCheck -Recurse -Force
 
           $archiveSha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           Set-Content -LiteralPath $sidecar -Value $archiveSha256 -Encoding ascii
