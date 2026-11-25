@@ -118,6 +118,8 @@ Static named-domain policy is installed from:
 
 This includes selected proxy/remote-browser domains and related policy entries. The authoritative Tor relay feed dependency at `onionoo.torproject.org` is explicitly exempted from the parent Tor Project DNS block so the endpoint refresh engine can continue to retrieve relay data.
 
+The same job that refreshes the IP blocklist downloads the [HaGeZi DNS bypass feed](https://github.com/hagezi/dns-blocklists#bypass_all) and generates `/etc/dnsmasq.d/91-hagezi-bypass.conf`. It runs every six hours and when **Refresh Endpoints** is clicked. Until the first successful refresh, dnsmasq uses the local domain rules in `90-pi-router-domain-block.conf`. Successful refreshes merge new domains into the last applied HaGeZi list. Domains removed upstream stay blocked, subject to the router's DNS dependency exceptions. A failed refresh leaves the last applied rules in place.
+
 `dnsmasq` caching is intentionally disabled:
 
 ```text

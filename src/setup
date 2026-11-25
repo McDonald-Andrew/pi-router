@@ -621,6 +621,11 @@ phase_files() {
         /usr/local/lib/pi-router/ip-block \
         0755
 
+    install_system_source \
+        lib/dns-block/adapters/hagezi_adapter.py \
+        /usr/local/lib/pi-router/dns-block/adapters/hagezi_adapter.py \
+        0644
+
     #
     # Static router policy
     #
@@ -4133,6 +4138,11 @@ verify_final_artifact_tree() {
         scripts/pi-router-ip-refresh \
         /usr/local/sbin/pi-router-ip-refresh \
         0 0 755
+
+    verify_static_source_install \
+        lib/dns-block/adapters/hagezi_adapter.py \
+        /usr/local/lib/pi-router/dns-block/adapters/hagezi_adapter.py \
+        0 0 644
 
     verify_static_source_install \
         scripts/pi-router-update \

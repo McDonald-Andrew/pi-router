@@ -56,6 +56,80 @@ report_progress() {
 }
 
 
+refresh_hagezi() (
+    local source="$RUN/hagezi-source.txt"
+    local rendered="$RUN/hagezi.conf"
+    local candidate=""
+    local previous=""
+    local restart_attempted=0
+
+    trap 'rm -f -- "$candidate" "$previous"' EXIT
+
+    curl --fail --silent --show-error --proto '=https' --connect-timeout 10 --max-time 30 --output "$source" "$HAGEZI_URL" || return 1
+
+    # Keeps these URL's resovable for these adapters to later download and process
+    python3 "$HAGEZI_ADAPTER" \
+        --source "$source" \
+        --previous "$HAGEZI_CONFIG" \
+        --preserve-url "$NORD_URL" \
+        --preserve-url "$HIDEME_URL" \
+        --preserve-url "$WINDSCRIBE_BASE" \
+        --preserve-url "$PRIVADO_URL" \
+        --preserve-url "$TUNNELBEAR_URL" \
+        --preserve-url "$SURFSHARK_URL" \
+        --preserve-url "$PIA_URL" \
+        --preserve-url "$IPLOCATE_URL" \
+        --preserve-url "$TOR_URL" \
+        > "$rendered" ||
+        return 1
+
+    if cmp -s "$rendered" "$HAGEZI_CONFIG"; then
+        echo 'HaGeZi DNS rules unchanged'
+        return 0
+    fi
+
+    # Hidden files are ignored by dnsmasq's conf-dir scan. Keep the candidate
+    # and rollback file on the destination filesystem for atomic renames.
+    candidate="$(mktemp "${HAGEZI_CONFIG%/*}/.hagezi-new.XXXXXX")" || return 1
+    if [[ -e "$HAGEZI_CONFIG" ]]; then
+        previous="$(mktemp "${HAGEZI_CONFIG%/*}/.hagezi-old.XXXXXX")" || return 1
+        install -m 0644 "$HAGEZI_CONFIG" "$previous" || return 1
+    fi
+
+    install -m 0644 "$rendered" "$candidate" || return 1
+    /usr/sbin/dnsmasq --test --conf-file="$candidate" || return 1
+    mv -f -- "$candidate" "$HAGEZI_CONFIG" || return 1
+
+    # Use the same full-config validation as dnsmasq.service on Raspberry Pi OS.
+    if /usr/share/dnsmasq/systemd-helper checkconfig; then
+        restart_attempted=1
+        if systemctl restart dnsmasq.service &&
+            systemctl is-active --quiet dnsmasq.service
+        then
+            echo 'HaGeZi DNS rules activated'
+            return 0
+        fi
+    fi
+
+    if [[ -n "$previous" ]]; then
+        if ! mv -f -- "$previous" "$HAGEZI_CONFIG"; then
+            printf 'HaGeZi rollback file remains at %s\n' "$previous" >&2
+            previous=""
+            return 1
+        fi
+    elif ! rm -f -- "$HAGEZI_CONFIG"; then
+        echo 'Failed to remove the rejected first HaGeZi config' >&2
+        return 1
+    fi
+
+    if (( restart_attempted )); then
+        systemctl restart dnsmasq.service ||
+            echo 'Failed to restart dnsmasq after rolling back the HaGeZi refresh' >&2
+    fi
+    return 1
+)
+
+
 download_url() {
     local label="$1"
     local url="$2"
@@ -638,6 +712,11 @@ PIA_ADAPTER="$BASE/adapters/pia_adapter.py"
 IPLOCATE_ADAPTER="$BASE/adapters/iplocate_adapter.py"
 TOR_ADAPTER="$BASE/adapters/tor_adapter.py"
 
+DNS_BASE=/usr/local/lib/pi-router/dns-block
+HAGEZI_ADAPTER="$DNS_BASE/adapters/hagezi_adapter.py"
+HAGEZI_CONFIG=/etc/dnsmasq.d/91-hagezi-bypass.conf
+HAGEZI_URL='https://raw.githubusercontent.com/hagezi/dns-blocklists/main/dnsmasq/doh-vpn-proxy-bypass.txt'
+
 EXPECTED_ENGINE_SHA='dab599746e3ade155ccfb2df6a021888bdc45a11ca72ac82817deb0ec0f29697'
 
 VPN_USER="${VPN_USER:-admin}"
@@ -741,6 +820,9 @@ STAMP="$(
 RUN="$RUNROOT/$STAMP-$$"
 
 mkdir -p "$RUN"
+
+report_progress 5 "Refreshing DNS blocklist"
+refresh_hagezi || echo 'WARNING: HaGeZi DNS refresh failed' >&2
 
 VPN_HOME="$(
     getent passwd "$VPN_USER" |
