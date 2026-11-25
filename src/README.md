@@ -264,7 +264,27 @@ The helper:
 
 Do not use bare `protonvpn connect` for normal router operation. The managed helper is the supported connection path because it coordinates Proton with the fail-closed host firewall.
 
-You can also run `systemctl --user --no-block restart protonvpn-autoconnect.service` like the health check
+### Manual VPN recovery
+
+Run these commands on the Pi as the router user from an SSH session on the LAN.
+
+If internet access stalls, start the health check. It tests tunnel traffic and DNS and asks the autoconnect service to reconnect if recovery is needed, even when Proton reports `Connected`.
+
+```bash
+systemctl --user --no-block start protonvpn-healthcheck.service
+```
+
+If Proton is already disconnected, you can start a managed reconnect directly. The autoconnect service keeps an existing WireGuard session connected, so use the health check for a stalled tunnel.
+
+```bash
+systemctl --user --no-block restart protonvpn-autoconnect.service
+```
+
+Once the reconnect settles, check that tunnel traffic and DNS work.
+
+```bash
+~/.local/bin/protonvpn-healthcheck --check-only
+```
 
 ## Installation model
 

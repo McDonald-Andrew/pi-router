@@ -58,6 +58,16 @@ Power off the Pi and downstream access point before changing the connections. If
 
 Image users should continue with the browser-based provisioning and Proton onboarding steps in the [image user guide](image/USER-GUIDE.md).
 
+# Recover a Proton VPN connection
+
+If internet access drops, SSH into the Pi from the LAN as the router user and run this command. You can reach the Pi over the LAN while its internet access is down.
+
+```bash
+systemctl --user --no-block start protonvpn-healthcheck.service
+```
+
+The health check can restart a stalled tunnel even when Proton reports `Connected`. See the [manual recovery commands](src/README.md#manual-vpn-recovery) for a direct reconnect and verification.
+
 # Pack / Repack `pi-router-vX.Y.Z.tar.gz`
 
 Create a new archive:
