@@ -256,10 +256,11 @@ The helper:
 
 1. waits for a usable IPv4 default route on the configured WAN interface
 2. waits for the user's Secret Service/keyring
-3. exits successfully if Proton is already connected
-4. temporarily opens the dedicated host bootstrap firewall gate
-5. runs the Proton connection attempt with bounded retries
-6. closes the bootstrap gate on every exit path
+3. selects native WireGuard in Proton's settings and keeps an existing WireGuard session connected
+4. disconnects an active ProTUN session so the protocol change can take effect
+5. temporarily opens the dedicated host bootstrap firewall gate
+6. connects with bounded retries and checks that `proton0` is a WireGuard device
+7. closes the bootstrap gate on every exit path
 
 Do not use bare `protonvpn connect` for normal router operation. The managed helper is the supported connection path because it coordinates Proton with the fail-closed host firewall.
 

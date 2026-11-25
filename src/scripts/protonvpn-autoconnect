@@ -29,6 +29,41 @@ prune_connected_profiles() {
         echo "protonvpn-autoconnect: WARNING - redundant profile pruning failed" >&2
 }
 
+force_wireguard() {
+    python3 - "${XDG_CONFIG_HOME:-$HOME/.config}/Proton/VPN/settings.json" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+try:
+    path = Path(sys.argv[1]).resolve()
+    try:
+        settings = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        settings = {}
+
+    if not isinstance(settings, dict):
+        raise ValueError("expected a JSON object")
+
+    if settings.get("protocol") != "wireguard":
+        settings["protocol"] = "wireguard"
+        os.umask(0o077)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=path.parent) as directory:
+            replacement = Path(directory) / path.name
+            replacement.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+            replacement.replace(path)
+except (OSError, RuntimeError, ValueError) as error:
+    sys.exit(f"protonvpn-autoconnect: unable to set WireGuard in Proton settings: {error}")
+PY
+}
+
+proton_device_type() {
+    nmcli -g GENERAL.TYPE device show proton0 2>/dev/null
+}
+
 # Always fail closed when this script exits.
 trap close_bootstrap EXIT
 
@@ -53,10 +88,24 @@ while ! busctl --user --list 2>/dev/null | grep -q '^org.freedesktop.secrets'; d
     sleep 1
 done
 
-# If Proton is already connected, leave the bootstrap gate closed.
+force_wireguard
+
+# A live ProTUN session must be replaced for the setting to take effect.
 if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
-    prune_connected_profiles
-    exit 0
+    case "$(proton_device_type || true)" in
+        wireguard)
+            prune_connected_profiles
+            exit 0
+            ;;
+        tun)
+            echo "protonvpn-autoconnect: replacing active ProTUN session with WireGuard" >&2
+            timeout 30s protonvpn disconnect || true
+            ;;
+        *)
+            echo "protonvpn-autoconnect: unable to verify the connected Proton device type" >&2
+            exit 1
+            ;;
+    esac
 fi
 
 # Start from a closed gate, then temporarily permit Pi-originated
@@ -75,16 +124,13 @@ while [ "$attempt" -le "$max_attempts" ]; do
     # inactive Proton-generated proton0 profiles.
     prepare_connection_attempt || exit 1
 
-    if timeout 90s protonvpn connect; then
-        prune_connected_profiles
-        exit 0
-    fi
-
-    # Be conservative: if the CLI returned non-zero but Proton actually
-    # reached Connected state, treat the connection as successful.
-    if protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
-        prune_connected_profiles
-        exit 0
+    if timeout 90s protonvpn connect ||
+        protonvpn status 2>/dev/null | grep -q '^Status: Connected'; then
+        if [ "$(proton_device_type || true)" = wireguard ]; then
+            prune_connected_profiles
+            exit 0
+        fi
+        echo "protonvpn-autoconnect: Proton did not activate WireGuard on proton0" >&2
     fi
 
     # A failed CLI attempt may leave both an active zombie and a saved profile.
